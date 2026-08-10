@@ -161,11 +161,13 @@ class GarminClientAdapter:
         import zipfile
 
         fmt = self.client.ActivityDownloadFormat.ORIGINAL
-        raw = self.call(lambda: self.client.download_activity(activity_id, dl_fmt=fmt))
+        raw: Any = self.call(lambda: self.client.download_activity(activity_id, dl_fmt=fmt))
 
-        if raw[:2] == b"PK":  # zip magic
+        if isinstance(raw, bytes) and raw[:2] == b"PK":  # zip magic
             with zipfile.ZipFile(io.BytesIO(raw)) as zf:
                 fit_names = [n for n in zf.namelist() if n.lower().endswith(".fit")]
                 if fit_names:
-                    return zf.read(fit_names[0])
-        return raw
+                    data = zf.read(fit_names[0])
+                    if isinstance(data, bytes):
+                        return data
+        return raw if isinstance(raw, bytes) else b""

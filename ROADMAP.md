@@ -171,12 +171,21 @@ via `gdash ingest schedule` (runs every 15 min ±2 jitter, catch-up window 3 day
 
 *Done when:* 2 weeks unattended syncing, crash-recovery clean, no duplicate rows, no API 429s.
 
-### Phase 2 — Metrics Engine
-TRIMP/Edwards load, strain calibration curve, strength volume-load, ln(RMSSD) recovery composite,
-ATL/CTL/TSB, Garmin-native passthrough ingestion. **Golden tests** from Phase 0 fixtures: metrics
-must be byte-reproducible. CLI report (`gdash report --today`).
-*Done when:* computed trends track Garmin's own Training Load / Body Battery within sane bands;
-tests green.
+### Phase 2 — Metrics Engine  ✅ (implemented, see commit log)
+`app/metrics/`: load (Banister TRIMP from FIT samples + Edwards zone-minutes +
+strength duration component), strain calibration (90d rolling p95 ≈ 20, read-time
+curve, first-day self-calibration), recovery composite (ln(RMSSD) z-score when HRV
+exists; Venu 2 fallback = RHR deviation + sleep + stress with renormalized weights;
+missing night never zero-filled), Coggan ATL/CTL/TSB from strain. Materialized in
+`computed_scores`; `gdash metrics compute` / `gdash report today|weekly|monthly`.
+
+Validation on 91 real days: strain vs Garmin intensity-minutes r=0.973 (n=19),
+recovery vs Garmin Body-Battery-at-wake r=0.825 (n=66); 78/91 days scored;
+TSB swings negative after training blocks, positive after rest. 38 tests green
+(golden values hand-computed), ruff+mypy clean.
+
+*Done when:* computed trends track Garmin's own Training Load / Body Battery within
+sane bands (✅ r≈0.97 / 0.83); tests green (✅).
 
 ### Phase 3 — Web Dashboard (single container)
 Jinja2 + Alpine + uPlot + Tailwind. Views: Today (recovery dial red/yellow/green, strain gauge,

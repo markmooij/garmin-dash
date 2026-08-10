@@ -14,7 +14,8 @@ Usage: gdash <command> [args]
 
 Commands:
   auth [status|start|code <CODE>]   Garmin authentication
-  ingest [backfill|schedule]        Data ingestion
+  ingest [sync|backfill|schedule]   Data ingestion
+  metrics [compute [DAYS]]          Metrics engine (compute scores)
   report [today|weekly|monthly]     Metrics reports
 """
 
@@ -33,8 +34,10 @@ def main() -> int:
         from .auth.cli import main as run
     elif command == "ingest":
         from .ingestion.cli import main as run
-    elif command == "report":
+    elif command == "metrics":
         from .metrics.cli import main as run
+    elif command == "report":
+        from .metrics.cli import report_main as run
     else:
         print(f"Unknown command: {command}")
         print(USAGE)

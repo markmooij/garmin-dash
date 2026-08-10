@@ -1,81 +1,54 @@
-"""CLI for metrics computation and reporting."""
+"""CLI: gdash metrics compute / gdash report today|weekly|monthly."""
+
+from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import date
+
+from ..db import get_session
 
 
-def main():
-    """CLI entry point."""
-    if len(sys.argv) < 2:
-        print("Garmin Dash — Metrics CLI")
-        print("Usage: gdash report <command>")
-        print("Commands: today, weekly, monthly")
-        print("Run 'gdash report --help' for more info.")
-        sys.exit(1)
+def main(argv: list[str] | None = None) -> int:
+    argv = argv if argv is not None else sys.argv[1:]
+    if not argv:
+        print("gdash metrics <command>")
+        print("Commands: compute [DAYS], backfill-from-scratch")
+        return 2
+    cmd = argv[0]
 
-    command = sys.argv[1]
+    if cmd == "compute":
+        from .compute import compute_recent
 
-    if command == "today":
-        report_today()
-    elif command == "weekly":
-        report_weekly()
-    elif command == "monthly":
-        report_monthly()
-    else:
-        print(f"Unknown command: {command}")
-        sys.exit(1)
+        days = int(argv[1]) if len(argv) > 1 else 92
+        results = compute_recent(days=days)
+        print(f"✅ Computed {len(results)} days of scores")
+        return 0
+
+    print(f"Unknown metrics command: {cmd}")
+    return 2
 
 
-def report_today():
-    """Generate today's metrics report."""
-    print("📊 Today's Metrics Report")
-    print("=" * 40)
-    print()
-    print("Report generated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print()
-    print("Today's Date: " + datetime.now().strftime("%Y-%m-%d"))
-    print()
-    print("This report would display:")
-    print("  • Recovery score (0-100)")
-    print("  • Strain (0-21)")
-    print("  • Sleep summary")
-    print("  • HRV snapshot")
-    print("  • Body Battery")
-    print("  • Training load")
-    print()
-    print("✅ Report structure validated")
+def report_main(argv: list[str] | None = None) -> int:
+    """gdash report today|weekly|monthly."""
+    argv = argv if argv is not None else sys.argv[1:]
+    if not argv:
+        print("gdash report <today|weekly|monthly>")
+        return 2
+    cmd = argv[0]
+    session = get_session()
+    try:
+        from .report import report_range, report_today
 
-
-def report_weekly():
-    """Generate weekly metrics report."""
-    print("📊 Weekly Metrics Report")
-    print("=" * 40)
-    print()
-    print("Report generated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print()
-    print("This report would display:")
-    print("  • Weekly average recovery")
-    print("  • Weekly strain average")
-    print("  • Training status (Trend/OK/Overreached)")
-    print("  • HRV trend")
-    print("  • Sleep quality")
-    print()
-    print("✅ Report structure validated")
-
-
-def report_monthly():
-    """Generate monthly metrics report."""
-    print("📊 Monthly Metrics Report")
-    print("=" * 40)
-    print()
-    print("Report generated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print()
-    print("This report would display:")
-    print("  • Monthly recovery average")
-    print("  • Monthly strain average")
-    print("  • ATL/CTL/TSB trend")
-    print("  • VO2max trend")
-    print("  • Sleep quality")
-    print("  • HRV baseline")
-    print()
-    print("✅ Report structure validated")
+        today = date.today()
+        if cmd == "today":
+            print(report_today(session, today))
+        elif cmd == "weekly":
+            print(report_range(session, 7, "Weekly summary", today))
+        elif cmd == "monthly":
+            print(report_range(session, 30, "Monthly summary", today))
+        else:
+            print(f"Unknown report command: {cmd}")
+            return 2
+        return 0
+    finally:
+        session.close()

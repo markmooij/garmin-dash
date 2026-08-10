@@ -22,8 +22,17 @@ make setup
 
 # Configure authentication
 cp .env.example .env
-gdash auth setup
-# Follow prompts to complete MFA login
+# fill in GARMIN_EMAIL / GARMIN_PASSWORD, then:
+gdash auth start        # begins MFA login
+gdash auth code <CODE>  # complete with the emailed code
+
+# Ingest + compute
+gdash ingest backfill 90   # pull 90 days of history
+gdash metrics compute      # materialize strain/recovery/ATL/CTL/TSB
+gdash report today         # 📊 text report
+
+# Background sync (every 15 min ±2 jitter)
+gdash ingest schedule
 
 # Start dev containers
 make compose-dev

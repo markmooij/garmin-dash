@@ -72,4 +72,6 @@ def init_db() -> None:
     """Create all tables (used by tests / first-run bootstrap)."""
     from . import models  # noqa: F401
 
-    Base.metadata.create_all(bind=_session_factory().bind)
+    engine = _session_factory().bind
+    if engine is not None:
+        Base.metadata.create_all(bind=engine)

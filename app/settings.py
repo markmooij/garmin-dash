@@ -49,6 +49,32 @@ class Settings(BaseSettings):
     SYNC_INTERVAL_MINUTES: str = "15"
     SYNC_DAYS_BACK: str = "3"
 
+    # ── Metrics engine (Phase 2) ──────────────────────────────────────────
+    # TRIMP normalization: session HRr = (HR - rest) / (max - rest).
+    # Rest HR per-session = that day's resting_heart_rate; fallback constant.
+    # Max HR: observed max across activities + buffer; fallback constant.
+    HR_REST_FALLBACK: int = 48
+    HR_MAX_FALLBACK: int = 190
+    HR_MAX_OBSERVED_BUFFER: int = 5
+
+    # Strain calibration: rolling-window 95th percentile of daily raw load ≈ 20
+    STRAIN_WINDOW_DAYS: int = 90
+    STRAIN_PERCENTILE: float = 0.95
+    STRAIN_CAP: float = 21.0
+
+    # Recovery composite weights (must sum to 1 when HRV present).
+    # When HRV is missing (Venu 2), HRV weight is dropped and the rest are
+    # renormalized to sum 1. Missing inputs are dropped the same way.
+    RECOVERY_WEIGHTS_HRV: str = '{"hrv": 0.5, "rhr": 0.2, "sleep": 0.2, "stress": 0.1}'
+    RECOVERY_BASELINE_DAYS: int = 60
+    RECOVERY_MIN_BASELINE_DAYS: int = 7
+    RECOVERY_BAND_GREEN: float = 66.0  # >= green
+    RECOVERY_BAND_YELLOW: float = 34.0  # >= yellow, < green; below = red
+
+    # Duration-based load for strength-like sports (load points per minute),
+    # because HR undercounts strength. Configurable per sport profile.
+    SPORT_LOAD_FACTORS: str = '{"strength_training": 45.0, "boxing": 25.0}'
+
     @property
     def is_prod(self) -> bool:
         """Check if running in production profile."""

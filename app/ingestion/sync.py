@@ -75,7 +75,10 @@ def _unique_cols(model: type) -> list[str]:
     """Column names of the model's first UniqueConstraint."""
     from sqlalchemy import UniqueConstraint
 
-    for constraint in model.__table__.constraints:
+    table = getattr(model, "__table__", None)
+    if table is None:
+        raise ValueError(f"{model.__name__} has no table")
+    for constraint in table.constraints:
         if isinstance(constraint, UniqueConstraint):
             return [c.name for c in constraint.columns]
     raise ValueError(f"No UniqueConstraint on {model.__name__}")
@@ -252,18 +255,20 @@ def sync_intraday(
 
     if "body_battery" in kinds:
         try:
-            raw = adapter.get_body_battery(dstr, dstr)
-            if isinstance(raw, list) and raw:
-                _save_raw(session, "body_battery", dstr, raw)
-            elif isinstance(raw, dict) and raw.get("bodyBatteryValuesArray"):
-                # single-day dict form
-                raw = [raw]
-                _save_raw(session, "body_battery", dstr, raw)
+            bb_raw: object = adapter.get_body_battery(dstr, dstr)
+            # Accept both the range form (list of day dicts) and the
+            # single-day dict form; normalize to a list.
+            if isinstance(bb_raw, dict) and bb_raw.get("bodyBatteryValuesArray"):
+                entries: list[dict[str, Any]] = [bb_raw]
+                _save_raw(session, "body_battery", dstr, entries)
+            elif isinstance(bb_raw, list) and bb_raw:
+                entries = bb_raw
+                _save_raw(session, "body_battery", dstr, bb_raw)
             else:
-                raw = []
+                entries = []
             # values are [ts, "MEASURED", value, drain] or [ts, value]
             batches["body_battery"] = []
-            for item in raw if isinstance(raw, list) else []:
+            for item in entries:
                 for row in item.get("bodyBatteryValuesArray") or []:
                     if len(row) >= 3:
                         batches["body_battery"].append((row[0], float(row[2])))

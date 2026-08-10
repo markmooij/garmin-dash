@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
-from app.db import Base, create_session_factory
 from app.db.models import (
     Activity,
     DailyWellness,
@@ -19,10 +17,6 @@ from app.db.models import (
     SyncState,
 )
 from app.ingestion.sync import sync_activities, sync_day, sync_intraday, sync_sleep, sync_wellness
-
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 FIXTURES = Path("tests/fixtures/garmin")
@@ -72,17 +66,6 @@ class FakeAdapter:
 
     def download_activity_fit(self, activity_id):  # noqa: ARG002
         return b"not-a-real-fit"
-
-
-@pytest.fixture
-def session(tmp_path) -> Session:
-    factory = create_session_factory(str(tmp_path / "test.db"))
-    Base.metadata.create_all(bind=factory().get_bind())
-    s = factory()
-    from app.db import seed_default_user
-
-    seed_default_user(s)
-    return s
 
 
 @pytest.fixture

@@ -101,6 +101,7 @@ garmin-dash/
 - `activities` — summary + sport type + HR zones + `fit_file` reference
 - `activity_hr_series` — parsed FIT intra-activity HR/pace (source of strain)
 - `exercise_sets` — strength sets/reps (volume-load input; Venu 2 accelerometer rep counting)
+  *(deprecated in v2: replaced by training type + duration for strength load)*
 - `intraday_series` — 1-min stress / HR / Body Battery for the timeline view
 - `journal_entries` — responses to pre-registered questions + free tags + timestamps
 - `computed_scores` — strain, recovery, ATL/CTL/TSB per day (materialized; recompute-on-new-data)
@@ -111,9 +112,9 @@ garmin-dash/
 
 - **Strain (0–21)**: compute *raw load* = Banister TRIMP + Edwards zone-minutes (canonical,
   stored raw). Map to 0–21 via **personal calibration curve** (rolling 90-day 95th percentile ≈ 20,
-  capped). Strength sessions add a **volume-load component** (reps × estimated weight from
-  `exercise_sets`, scaled via configurable strength-weighting factor). Scale changes never touch
-  stored history — the curve is applied at read time.
+  capped). Strength sessions add a **duration-based load component** (muscle group type + session
+  duration, configurable per sport profile). Scale changes never touch stored history — the curve
+  is applied at read time.
 - **Recovery (0–100)**: dominant factor = **ln(RMSSD) z-score vs 60-day rolling baseline**
   (RMSSD is log-normal — never z-score raw values); plus RHR deviation from baseline, sleep
   efficiency/deficit, respiration. Weights configurable. Missing night → recovery not shown as
@@ -128,9 +129,10 @@ garmin-dash/
 
 ## Hardware & Ecosystem Boundaries (updated from v1)
 
-1. **No barbell velocity / true muscular strain**: Venu 2 exposes exercise *sets/reps* (accelerometer
-   rep counting), so **volume-load estimation partially bridges the gap** — no velocity, no
-   one-rep-max scaling. Strength strain remains approximate; flagged in UI as estimate.
+1. **No barbell velocity / true muscular strain**: Venu 2 does not expose reliable rep counts or
+   estimated weights. Instead, strength load is estimated from **training type (muscle group) +
+   duration** — configurable per sport profile. Strength strain is approximate; flagged in UI as
+   estimate.
 2. **No continuous intraday raw HRV**: only overnight average + HRV Status. Sufficient — Whoop's
    recovery is likewise dominated by overnight HRV. Health Snapshots are manual/low-value: dropped.
 3. **Unofficial Garmin API**: undocumented, can break, ToS gray zone, account-ban risk. Mitigations:

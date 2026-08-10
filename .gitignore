@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example
+
+# --- Garmin tokens / auth ---
+*.garmin*
+garmin_tokens*
+GARMINTOKENS*
+tokens/
+*.oauth
+
+# --- Databases & data ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+data/
+backups/
+
+# --- Pi / agent tooling ---
+.pi/
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store

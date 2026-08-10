@@ -1,0 +1,32 @@
+{# Sleep card: score + stage stacked bar #}
+{% set s = data.sleep %}
+{% set total = (s.deep_s or 0) + (s.rem_s or 0) + (s.light_s or 0) + (s.awake_s or 0) %}
+<div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+  <div class="flex items-baseline justify-between">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Slaap</h2>
+    {% if s.start_local %}
+      <span class="text-[10px] text-zinc-500">{{ s.start_local[11:16] }}–{{ s.end_local[11:16] }}</span>
+    {% endif %}
+  </div>
+  {% if s.score is none %}
+    <p class="mt-4 text-sm text-zinc-500">Geen slaapregistratie voor deze dag.</p>
+  {% else %}
+    <div class="mt-2 flex items-end gap-3">
+      <div class="text-4xl font-bold text-zinc-100">{{ '%.0f'|format(s.score) }}</div>
+      <div class="text-xs text-zinc-500 pb-1">{{ (total / 3600)|round(1) }} u totaal</div>
+    </div>
+    <div class="mt-3 h-2.5 rounded-full overflow-hidden flex">
+      {% set pct = 100.0 / total if total > 0 else 0 %}
+      <div class="bg-indigo-500" style="width: {{ s.deep_s * pct }}%" title="Diep"></div>
+      <div class="bg-purple-400" style="width: {{ s.rem_s * pct }}%" title="REM"></div>
+      <div class="bg-sky-400" style="width: {{ s.light_s * pct }}%" title="Licht"></div>
+      <div class="bg-zinc-600" style="width: {{ s.awake_s * pct }}%" title="Wakker"></div>
+    </div>
+    <div class="mt-3 grid grid-cols-4 gap-2 text-center text-[11px]">
+      <div><div class="text-zinc-200 font-medium">{{ '%.0f'|format((s.deep_s or 0)/60) }} min</div><div class="text-zinc-600">diep</div></div>
+      <div><div class="text-zinc-200 font-medium">{{ '%.0f'|format((s.rem_s or 0)/60) }} min</div><div class="text-zinc-600">rem</div></div>
+      <div><div class="text-zinc-200 font-medium">{{ '%.0f'|format((s.light_s or 0)/60) }} min</div><div class="text-zinc-600">licht</div></div>
+      <div><div class="text-zinc-200 font-medium">{{ '%.0f'|format((s.awake_s or 0)/60) }} min</div><div class="text-zinc-600">wakker</div></div>
+    </div>
+  {% endif %}
+</div>

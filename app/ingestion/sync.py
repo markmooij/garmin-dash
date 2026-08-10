@@ -25,6 +25,7 @@ from ..db.models import (
     Activity,
     ActivityHrSeries,
     DailyWellness,
+    DeviceMetrics,
     IntradaySeries,
     RawPayload,
     SleepSession,
@@ -166,6 +167,66 @@ def sync_wellness(session: Session, adapter: GarminClientAdapter, day: date) -> 
         },
     )
     _touch_sync(session, "daily_wellness", day)
+
+
+def sync_device_metrics(session: Session, adapter: GarminClientAdapter, day: date) -> None:
+    """device_metrics ← max_metrics (VO2max, fitness age).
+
+    Garmin only reports the value for the date it was last measured (often
+    yesterday, today is empty until the next measurement). Probe the target
+    day, then yesterday as fallback. Store per-date snapshots so the
+    dashboard can show what Garmin reported over time.
+    """
+    dstr = _date_str(day)
+    raw = None
+    probed: list[date] = [day]
+    try:
+        raw = adapter.get_max_metrics(dstr)
+    except Exception as e:  # noqa: BLE001
+        _touch_sync(session, "device_metrics", day, error=str(e))
+        return
+    if not raw:
+        # fall back to yesterday once (value is keyed by measurement date)
+        prev = day - timedelta(days=1)
+        probed.append(prev)
+        try:
+            raw = adapter.get_max_metrics(_date_str(prev))
+        except Exception as e:  # noqa: BLE001
+            _touch_sync(session, "device_metrics", day, error=str(e))
+            return
+
+    if isinstance(raw, list):
+        raw = raw[0] if raw else {}
+    if not isinstance(raw, dict) or not raw:
+        _touch_sync(session, "device_metrics", day, error="empty payload")
+        return
+
+    generic = raw.get("generic") or {}
+    vo2 = generic.get("vo2MaxValue") or generic.get("vo2MaxPreciseValue")
+    if vo2 is None:
+        _touch_sync(session, "device_metrics", day, error="no vo2max in payload")
+        return
+
+    metric_date_str = generic.get("calendarDate") or _date_str(probed[0])
+    try:
+        metric_date = date.fromisoformat(metric_date_str)
+    except ValueError:
+        metric_date = day
+    _save_raw(session, "max_metrics", dstr, raw)
+    _upsert(
+        session,
+        DeviceMetrics,
+        {
+            "user_id": 1,
+            "metric_date": metric_date,
+            "vo2max": generic.get("vo2MaxValue"),
+            "vo2max_precise": generic.get("vo2MaxPreciseValue"),
+            "fitness_age": generic.get("fitnessAge"),
+            "max_met_category": generic.get("maxMetCategory"),
+            "payload": {"cycling": raw.get("cycling"), "queried_on": dstr},
+        },
+    )
+    _touch_sync(session, "device_metrics", day)
 
 
 def sync_sleep(session: Session, adapter: GarminClientAdapter, day: date) -> None:
@@ -429,7 +490,7 @@ def sync_day(day: date, adapter: GarminClientAdapter, session: Session | None = 
     own = session is None
     session = session or get_session()
     try:
-        for stream_fn in (sync_wellness, sync_sleep, sync_intraday):
+        for stream_fn in (sync_wellness, sync_device_metrics, sync_sleep, sync_intraday):
             try:
                 stream_fn(session, adapter, day)
                 session.commit()

@@ -11,7 +11,7 @@ services:
         APP_NAME: garmin-dash
         SIGNAL_API_NAME: signal-messenger
     ports:
-      - "8000:8000"
+      - "${GARMINDASH_PORT:-8000}:8000"
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs

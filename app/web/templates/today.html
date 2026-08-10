@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Vandaag · Garmin Dash{% endblock %}
+{% block nav_today %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <div class="flex items-center gap-3">
+    <a href="/?date={{ prev }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
+    <h1 class="text-xl font-semibold">
+      {{ day.strftime('%A %d %B %Y') }}
+      {% if day == today %}<span class="text-xs text-emerald-400 font-normal ml-2">vandaag</span>{% endif %}
+    </h1>
+    <a href="/?date={{ next }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  {% include "partials/recovery_card.html" %}
+  {% include "partials/strain_card.html" %}
+  {% include "partials/sleep_card.html" %}
+</div>
+
+<div class="mt-4">
+  {% include "partials/garmin_strip.html" %}
+</div>
+
+<div class="mt-4">
+  {% include "partials/activities_card.html" %}
+</div>
+{% endblock %}

@@ -64,6 +64,10 @@ class FakeAdapter:
     def get_activity_details(self, activity_id):  # noqa: ARG002
         return {}
 
+    def get_max_metrics(self, cdate):
+        self.calls.append(f"max_metrics:{cdate}")
+        return _load("max_metrics.json")
+
     def download_activity_fit(self, activity_id):  # noqa: ARG002
         return b"not-a-real-fit"
 

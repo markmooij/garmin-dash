@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Trends · Garmin Dash{% endblock %}
+{% block nav_trends %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-semibold">Trends</h1>
+  <div class="flex gap-1 text-sm" x-data="{ days: {{ days }} }"
+       x-init="$watch('days', v => { window.location = '/trends?days=' + v })">
+    <button @click="days = 30" class="px-3 py-1.5 rounded-md border border-zinc-800"
+            :class="days === 30 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">30d</button>
+    <button @click="days = 90" class="px-3 py-1.5 rounded-md border border-zinc-800"
+            :class="days === 90 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">90d</button>
+    <button @click="days = 180" class="px-3 py-1.5 rounded-md border border-zinc-800"
+            :class="days === 180 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">180d</button>
+  </div>
+</div>
+
+<script id="trend-data" type="application/json">{{ data|tojson }}</script>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Herstel & belasting</h2>
+    <div id="chart-recovery"></div>
+  </div>
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Strain 0–21</h2>
+    <div id="chart-strain"></div>
+  </div>
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 lg:col-span-2">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Fitness — ATL / CTL / TSB (Coggan)</h2>
+    <div id="chart-tsb"></div>
+  </div>
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">RHR & stress</h2>
+    <div id="chart-rhr"></div>
+  </div>
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Slaapscore & Body Battery (wake)</h2>
+    <div id="chart-sleep"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/vendor/uplot.min.js"></script>
+<script src="/static/js/charts.js"></script>
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById("trend-data").textContent);
+  const x = DATA.dates.map(GDASH.epoch);
+  const C = GDASH.colors;
+
+  GDASH.lineChart(document.getElementById("chart-recovery"),
+    [{ label: "Herstel", color: C.emerald, width: 2, fill: true, value: v => v == null ? "–" : v.toFixed(0) }],
+    x, [DATA.recovery], { height: 220 });
+
+  GDASH.lineChart(document.getElementById("chart-strain"),
+    [{ label: "Strain", color: C.orange, width: 2, fill: true, value: v => v == null ? "–" : v.toFixed(1) }],
+    x, [DATA.strain], { height: 220 });
+
+  GDASH.lineChart(document.getElementById("chart-tsb"),
+    [
+      { label: "CTL", color: C.emerald, width: 1.5 },
+      { label: "ATL", color: C.red, width: 1.5 },
+      { label: "TSB", color: C.sky, width: 2, fill: true, value: v => v == null ? "–" : v.toFixed(1) },
+    ],
+    x, [DATA.ctl, DATA.atl, DATA.tsb], { height: 260 });
+
+  GDASH.lineChart(document.getElementById("chart-rhr"),
+    [
+      { label: "RHR", color: C.purple, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+      { label: "Stress", color: C.yellow, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+    ],
+    x, [DATA.rhr, DATA.stress], { height: 220 });
+
+  GDASH.lineChart(document.getElementById("chart-sleep"),
+    [
+      { label: "Slaapscore", color: C.indigo, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+      { label: "BB wake", color: C.zinc, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+    ],
+    x, [DATA.sleep_score, DATA.bb_wake], { height: 220 });
+})();
+</script>
+{% endblock %}

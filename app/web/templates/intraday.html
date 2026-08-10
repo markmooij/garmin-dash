@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Intraday · Garmin Dash{% endblock %}
+{% block nav_intraday %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div x-data="intradayPage()" x-init="load()">
+<div class="flex items-center justify-between mb-5">
+  <div class="flex items-center gap-3">
+    <button @click="shift(-1)" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</button>
+    <input type="date" x-model="day" @change="load()"
+           class="bg-zinc-900 border border-zinc-800 rounded-md px-3 py-1.5 text-sm text-zinc-200">
+    <button @click="shift(1)" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</button>
+    <h1 class="text-lg font-semibold hidden sm:block">Intraday</h1>
+  </div>
+  <div class="flex gap-2 text-xs" x-show="hasData">
+    <span class="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+      <span class="inline-block w-2 h-2 rounded-full bg-rose-400 mr-1"></span>HR
+    </span>
+    <span class="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+      <span class="inline-block w-2 h-2 rounded-full bg-yellow-300 mr-1"></span>stress
+    </span>
+    <span class="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+      <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1"></span>body battery
+    </span>
+  </div>
+</div>
+
+<div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+  <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">1-min serie</h2>
+  <div id="chart-intraday" class="w-full"></div>
+  <p class="mt-2 text-[11px] text-zinc-600" x-show="!loading && !hasData">
+    Geen intraday-data voor deze datum.
+  </p>
+</div>
+</div>
+
+<script>
+function intradayPage() {
+  return {
+    day: "{{ day.isoformat() }}",
+    loading: false,
+    hasData: false,
+    chart: null,
+    shift(delta) {
+      const d = new Date(this.day + "T12:00:00Z");
+      d.setUTCDate(d.getUTCDate() + delta);
+      this.day = d.toISOString().slice(0, 10);
+      this.load();
+    },
+    async load() {
+      this.loading = true;
+      const res = await fetch("/api/intraday?date=" + this.day);
+      const data = await res.json();
+      this.loading = false;
+
+      const el = document.getElementById("chart-intraday");
+      if (this.chart) { this.chart.destroy(); this.chart = null; }
+
+      const series = data.series || {};
+      const hr = series.heart_rate || [];
+      const stress = series.stress || [];
+      const bb = series.body_battery || [];
+      this.hasData = hr.length + stress.length + bb.length > 0;
+
+      if (!this.hasData) return;
+
+      // downsample each to ~700 points
+      const dHR = GDASH.downsample(hr, 700);
+      const dStress = GDASH.downsample(stress, 700);
+      const dBB = GDASH.downsample(bb, 700);
+
+      // align x: use HR timestamps as x-axis; fall back to stress/bb
+      let x = dHR.map(p => p[0]);
+      if (x.length === 0) x = dStress.map(p => p[0]);
+      if (x.length === 0) x = dBB.map(p => p[0]);
+      const yHR = dHR.map(p => p[1]);
+      const yStress = dStress.map(p => p[1]);
+      const yBB = dBB.map(p => p[1]);
+
+      const bands = (data.activity_windows || []).map(w => ({
+        from: w.start_s,
+        to: w.end_s,
+        fill: "rgba(52, 211, 153, 0.06)",
+      }));
+
+      this.chart = GDASH.twoScaleChart(el,
+        [
+          { label: "HR", color: GDASH.colors.red, scale: "hr", value: v => v == null ? "–" : v.toFixed(0) },
+          { label: "Stress", color: GDASH.colors.yellow, scale: "hr", value: v => v == null ? "–" : v.toFixed(0) },
+          { label: "Body Battery", color: GDASH.colors.emerald, scale: "bb", value: v => v == null ? "–" : v.toFixed(0) },
+        ],
+        x, [yHR, yStress, yBB],
+        {
+          height: 340,
+          scales: { hr: { auto: true }, bb: { auto: true } },
+          bands,
+        }
+      );
+    },
+  };
+}
+</script>
+{% endblock %}

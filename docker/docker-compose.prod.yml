@@ -6,7 +6,7 @@ services:
     image: ghcr.io/<your-username>/garmin-dash:latest
     # image: registry.example.com/garmin-dash:latest
     ports:
-      - "8000:8000"
+      - "${GARMINDASH_PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

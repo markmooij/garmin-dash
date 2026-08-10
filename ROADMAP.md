@@ -187,12 +187,22 @@ TSB swings negative after training blocks, positive after rest. 38 tests green
 *Done when:* computed trends track Garmin's own Training Load / Body Battery within
 sane bands (✅ r≈0.97 / 0.83); tests green (✅).
 
-### Phase 3 — Web Dashboard (single container)
-Jinja2 + Alpine + uPlot + Tailwind. Views: Today (recovery dial red/yellow/green, strain gauge,
-sleep card, Garmin-native strip) → Trends (ATL/CTL/TSB, HRV baseline, RHR) → Intraday timeline
-(1-min stress/HR/BB, uPlot, downsampled).
-*Done when:* "how am I / what happened" answerable from localhost in <3 s; page structure
-extensible (new card ≈ new Jinja partial + API route).
+### Phase 3 — Web Dashboard (single container)  ✅ (implemented, see commit log)
+`app/web/`: FastAPI app (`app.app:app`) with Jinja2 + Alpine.js + Tailwind (browser build)
++ uPlot. All frontend libs **vendored** under `app/web/static/vendor/` (no CDN, works
+offline on the RPi). Views: Today (SVG recovery dial + band colors, strain gauge 0–21,
+sleep card with stage bar, Garmin-native strip incl. VO₂max, activities with load
+breakdown, day nav) → Trends (30/90/180d: recovery, strain, ATL/CTL/TSB, RHR+stress,
+sleep score+BB) → Intraday (1-min HR/stress/BB with activity shading, stride
+downsampling, date picker). JSON API: `/api/summary`, `/api/trends`, `/api/intraday`
+— new card ≈ new partial + route. `device_metrics` table + sync step adds VO₂max
+snapshots (Garmin returns the value only for its last-measured date; fallback probe
+yesterday). Port configurable via `PORT`/`GARMINDASH_PORT` (default 8000).
+
+Verified: all routes < 100 ms on localhost, 52 tests green, ruff+mypy clean.
+
+*Done when:* "how am I / what happened" answerable from localhost in <3 s (✅ ~70 ms);
+page structure extensible (✅ partial + route per card).
 
 ### Phase 4 — Signal Messenger + Morning Report
 `libs/signal_messenger` package (interface + signal-cli-rest-api client, own tests, own README);

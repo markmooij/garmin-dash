@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from garminconnect.exceptions import (
     GarminConnectNotFoundError,
@@ -150,6 +150,17 @@ class GarminClientAdapter:
 
     def get_activity_details(self, activity_id: int) -> dict[str, Any]:
         return self.call(lambda: self.client.get_activity_details(activity_id))
+
+    def get_max_metrics(self, cdate: str) -> list[dict[str, Any]] | dict[str, Any]:
+        """Max metrics (VO2max etc.).
+
+        Garmin returns a list with one entry for the date the value was last
+        measured (often yesterday), and an empty list for older dates.
+        """
+        return cast(
+            "list[dict[str, Any]] | dict[str, Any]",
+            self.call(lambda: self.client.get_max_metrics(cdate)),
+        )
 
     def download_activity_fit(self, activity_id: int) -> bytes:
         """Download and unwrap the .FIT file for an activity.

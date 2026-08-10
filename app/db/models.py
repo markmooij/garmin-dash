@@ -270,6 +270,32 @@ class ComputedScore(Base):
     )
 
 
+class DeviceMetrics(Base):
+    """Garmin-native device-level metrics (VO2max, fitness age) per date.
+
+    Garmin only exposes the *current* VO2max value; each sync pass stores a
+    snapshot under the sync date, giving a trend of what Garmin reported.
+    """
+
+    __tablename__ = "device_metrics"
+    __table_args__ = (UniqueConstraint("user_id", "metric_date", name="uq_metrics_user_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1)
+    metric_date: Mapped[date] = mapped_column(Date, index=True)
+
+    vo2max: Mapped[float | None] = mapped_column(Float)
+    vo2max_precise: Mapped[float | None] = mapped_column(Float)
+    fitness_age: Mapped[int | None] = mapped_column(Integer)
+    max_met_category: Mapped[int | None] = mapped_column(Integer)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class RawPayload(Base):
     """Snapshot of every raw API response (debuggability, re-derivation)."""
 

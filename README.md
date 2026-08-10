@@ -34,7 +34,12 @@ gdash report today         # 📊 text report
 # Background sync (every 15 min ±2 jitter)
 gdash ingest schedule
 
-# Start dev containers
+# Web dashboard (dev; port overridable via GARMINDASH_PORT)
+uvicorn app.app:app --port 8123
+# → Today:  http://localhost:8123/  ·  Trends: /trends  ·  Intraday: /intraday
+# → JSON:   /api/summary · /api/trends · /api/intraday
+
+# Start dev containers (app + signal-api)
 make compose-dev
 
 # Access dashboard at http://localhost:8000

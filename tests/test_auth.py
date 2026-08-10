@@ -1,6 +1,5 @@
 """Tests for authentication module."""
 
-import pytest
 from pathlib import Path
 
 

@@ -1,6 +1,5 @@
 """Tests for ingestion module."""
 
-import pytest
 from pathlib import Path
 
 

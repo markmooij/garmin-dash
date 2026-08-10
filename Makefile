@@ -1,4 +1,4 @@
-.PHONY: setup lint test clean compose-dev compose-prod build-push setup-garmin auth ingest-backfill report
+.PHONY: setup lint test clean compose-dev compose-prod build-push auth ingest-sync ingest-backfill ingest-schedule report
 
 # Python 3.12 virtual environment (using uv)
 VENV = .venv
@@ -6,8 +6,6 @@ UV = /home/mark/.local/bin/uv
 
 # Docker
 DOCKER = docker
-COMPOSE_DEV = docker-compose.dev.yml
-COMPOSE_PROD = docker-compose.prod.yml
 
 # Default target
 .DEFAULT_GOAL := help
@@ -15,26 +13,25 @@ COMPOSE_PROD = docker-compose.prod.yml
 help:
 	@echo "Garmin Dash — Development Commands"
 	@echo ""
-	@echo "  setup          Install Python dependencies"
-	@echo "  lint           Run ruff + mypy"
-	@echo "  test           Run pytest"
-	@echo "  clean          Remove build artifacts"
-	@echo "  compose-dev    Start dev containers (app + signal-api)"
-	@echo "  compose-prod   Start prod containers (RPi profile)"
-	@echo "  build-push     Build multi-arch images and push to GHCR"
-	@echo "  setup-garmin   Configure Garmin client (MFA + token cache)"
-	@echo "  auth           Interactive MFA login, save token cache"
-	@echo "  ingest-backfill  Backfill last 90 days to JSON fixtures"
-	@echo "  report         CLI metrics report (--today)"
+	@echo "  setup            Install Python dependencies (venv)"
+	@echo "  lint             Run ruff + mypy"
+	@echo "  test             Run pytest"
+	@echo "  clean            Remove build artifacts"
+	@echo ""
+	@echo "  auth             Garmin auth: status | start | code <CODE>"
+	@echo "  ingest-sync      Incremental sync (last 3 days)"
+	@echo "  ingest-backfill  Backfill last N days (make ingest-backfill DAYS=90)"
+	@echo "  ingest-schedule  Run the background sync scheduler"
+	@echo "  report           CLI metrics report"
+	@echo ""
+	@echo "  compose-dev      Start dev containers (app + signal-api)"
+	@echo "  compose-prod     Start prod containers (RPi profile)"
+	@echo "  build-push       Build multi-arch images and push to GHCR"
 
-setup: $(VENV)
-	$(PYTHON) -m pip install -e ".[dev]"
-	@echo "✅ Dependencies installed"
-
-$(VENV):
+setup:
 	$(UV) venv --clear $(VENV)
 	$(UV) pip install -e ".[dev]"
-	@echo "✅ Virtual environment created"
+	@echo "✅ Dependencies installed"
 
 lint:
 	$(UV) run ruff check app libs tests
@@ -45,38 +42,41 @@ test:
 
 clean:
 	rm -rf $(VENV) build dist *.egg-info .pytest_cache
-	rm -rf data/*.db* tests/fixtures/*.json
+	rm -rf data/*.db* tests/fixtures/garmin
 	@echo "✅ Cleaned"
+
+# Garmin
+auth:
+	$(UV) run gdash auth $(ARGS)
+
+ingest-sync:
+	@echo "🔄 Incremental sync (last 3 days)"
+	$(UV) run gdash ingest sync 3
+
+ingest-backfill:
+	@echo "📥 Backfill last $(DAYS) days"
+	$(UV) run gdash ingest backfill $(DAYS)
+
+ingest-schedule:
+	@echo "📅 Running sync scheduler (CTRL+C to stop)"
+	$(UV) run gdash ingest schedule
+
+report:
+	@echo "📊 Metrics Report"
+	$(UV) run gdash report $(ARGS)
 
 # Docker
 compose-dev:
-	$(DOCKER) compose -f $(COMPOSE_DEV) up -d
+	$(DOCKER) compose -f docker/docker-compose.dev.yml up -d
 
 compose-prod:
-	$(DOCKER) compose -f $(COMPOSE_PROD) up -d
+	$(DOCKER) compose -f docker/docker-compose.prod.yml up -d
 
 build-push:
 	$(DOCKER) buildx build --push \
 		--platform linux/amd64,linux/arm64 \
 		--build-arg REGISTRY=$(REGISTRY) \
 		--build-arg APP_NAME=$(APP_NAME) \
-		--build-arg SIGNAL_API_NAME=$(SIGNAL_API_NAME) \
 		-t $(REGISTRY)/$(APP_NAME):latest \
+		-f docker/Dockerfile \
 		.
-
-setup-garmin:
-	@echo "🔐 Garmin Client Setup"
-	@echo "This will configure garth for MFA login and create a token cache."
-	$(PYTHON) -m app.auth.setup --config-dir data/garmin
-
-auth:
-	@echo "🔐 Garmin MFA Login"
-	$(PYTHON) -m app.auth.cli --login
-
-ingest-backfill:
-	@echo "📥 Backfill last 90 days to JSON fixtures"
-	$(PYTHON) -m app.ingestion.backfill
-
-report:
-	@echo "📊 Metrics Report"
-	$(PYTHON) -m app.metrics.cli --today

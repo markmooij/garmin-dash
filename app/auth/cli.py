@@ -13,8 +13,8 @@ import sys
 from dotenv import load_dotenv
 
 from .session import (
-    AuthError,
     TOKEN_DIR,
+    AuthError,
     finish_login,
     resume_from_tokens,
     start_login,

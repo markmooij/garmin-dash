@@ -1,7 +1,6 @@
 """Tests for settings module."""
 
-import pytest
-from app.settings import Settings, get_settings
+from app.settings import Settings
 
 
 def test_settings_defaults():

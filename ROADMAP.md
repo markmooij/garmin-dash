@@ -21,6 +21,7 @@ computed ones, because re-deriving them is wasted effort.
 | 3 | LLM | **Private OpenAI-compatible endpoint** (vLLM/llama.cpp/OpenAI-proxy). Use the `openai` SDK with a configurable `base_url`; no Ollama, no LiteLLM. LLM never computes numbers — it only words them. |
 | 4 | Deployment | Dev machine (x86, RTX 2080 Ti) builds **multi-arch images** (`linux/amd64,linux/arm64` via buildx) → push to **private registry (GHCR)** → pull on **Raspberry Pi (arm64)**, the production host. Git repo is public-ready from day 1 (secrets never committed, MIT license, clean history). |
 | 5 | Training profile | **Strength-heavy first**; load model is pluggable so cardio/strength weighting adapts per user. Metric engine is **multi-user capable** (schema reserves `user_id`) even though deployment is single-user. |
+| 5b | HRV fallback | **Venu 2 exposes no HRV via the API** (verified empirically, `hrv-data` empty, HRV Status unavailable on this device). Recovery engine degrades gracefully: when HRV is missing, the composite falls back to RHR deviation + sleep quality + stress (HRV weight → 0). Engine stays HRV-capable for other users/devices. |
 | 6 | Scope | All of it: computed Whoop-style metrics **and** Garmin-native metrics (Training Status, VO2max, Training Effect, Body Battery, HRV Status, Sleep Score). |
 | 7 | Users | Single user for now; `user_id` reserved in schema, engine parameterized by profile (age, max HR, resting HR, sport mix). |
 | 8 | Docs | This roadmap is the plan of record. Original preserved as `ROADMAP.v1.md`. |
@@ -117,8 +118,10 @@ garmin-dash/
   is applied at read time.
 - **Recovery (0–100)**: dominant factor = **ln(RMSSD) z-score vs 60-day rolling baseline**
   (RMSSD is log-normal — never z-score raw values); plus RHR deviation from baseline, sleep
-  efficiency/deficit, respiration. Weights configurable. Missing night → recovery not shown as
-  "low", never zero-filled. Cross-validated against Body Battery / Training Readiness bands.
+  efficiency/deficit, respiration. Weights configurable. **HRV-adaptive**: if the device exposes
+  no HRV (Venu 2), the HRV factor is dropped and weights renormalize over RHR deviation, sleep
+  quality and stress. Missing night → recovery not shown as "low", never zero-filled.
+  Cross-validated against Body Battery / Training Readiness bands.
 - **TSB**: standard Coggan ATL (7d) / CTL (42d) exponential weighted load from *strain* (not raw
   TRIMP, so strength counts); cross-checked against Garmin's own acute/chronic load ratio.
 - **Journal insights**: pre-registered questions + free tags; **minimum-sample gates** (≥5 logged
@@ -135,6 +138,8 @@ garmin-dash/
    estimate.
 2. **No continuous intraday raw HRV**: only overnight average + HRV Status. Sufficient — Whoop's
    recovery is likewise dominated by overnight HRV. Health Snapshots are manual/low-value: dropped.
+   **Venu 2 note (verified):** the `hrv-service` endpoint returns `{}` for this device — no nightly
+   HRV at all. Recovery falls back to RHR + sleep + stress (decision 5b).
 3. **Unofficial Garmin API**: undocumented, can break, ToS gray zone, account-ban risk. Mitigations:
    conservative polling (≥15 min, jittered), backoff + rate limiting, adapter layer, backfill via
    paging, optional manual bulk-export fallback.
@@ -155,9 +160,15 @@ fixtures; confirm field shapes and cadence limits; draft Alembic migration v1.
 *Done when:* 90 days of history backfilled to JSON with zero manual steps; tokens survive restart;
 fixtures committed (sanitized) as golden-test inputs.
 
-### Phase 1 — Ingestion Pipeline
+### Phase 1 — Ingestion Pipeline  ✅ (implemented, see commit log)
 APScheduler worker; `GarminClient` adapter; idempotent upserts; backoff/retry + jittered polling;
 FIT download + fitparse parse; TZ/session bucketing; `raw_payloads` capture.
+
+Status: schema v1 migrated (Alembic), 15 tests green, real end-to-end sync verified
+(4 days → 20 activities, 4k intraday samples, 24k FIT HR samples, 117 raw payloads,
+zero sync errors). Remaining before "Done when" is met: **2 weeks unattended syncing**
+via `gdash ingest schedule` (runs every 15 min ±2 jitter, catch-up window 3 days).
+
 *Done when:* 2 weeks unattended syncing, crash-recovery clean, no duplicate rows, no API 429s.
 
 ### Phase 2 — Metrics Engine

@@ -2,8 +2,8 @@
 
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -30,20 +30,24 @@ class Settings(BaseSettings):
     SIGNAL_API_PORT: int = 8080
 
     # LLM (Phase 6)
-    LLM_BASE_URL: Optional[str] = None
-    LLM_API_KEY: Optional[str] = None
+    LLM_BASE_URL: str | None = None
+    LLM_API_KEY: str | None = None
     LLM_MODEL: str = "gpt-4o"
 
     # Signal Messenger (libs/signal_messenger)
     SIGNAL_CLI_API_URL: str = "http://localhost:8080"
-    SIGNAL_CLI_TOKEN: Optional[str] = None
+    SIGNAL_CLI_TOKEN: str | None = None
 
     # Garmin
-    GARMINTOKENS: Optional[str] = None
+    GARMINTOKENS: str | None = None
 
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+    # Ingestion scheduler
+    SYNC_INTERVAL_MINUTES: str = "15"
+    SYNC_DAYS_BACK: str = "3"
 
     @property
     def is_prod(self) -> bool:

@@ -9,9 +9,13 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from ..auth.session import resume_from_tokens
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 FIXTURES_DIR = Path("tests/fixtures/garmin")

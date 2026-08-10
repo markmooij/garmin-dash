@@ -1,35 +1,47 @@
-"""CLI entry point for the Garmin Dash application."""
+"""CLI entry point for the Garmin Dash application.
 
-from .settings import get_settings
+Subcommands are imported lazily so a failure in one module cannot break the others.
+"""
+
+from __future__ import annotations
+
+import sys
 
 
-def main():
-    """CLI entry point."""
-    import sys
-    from .auth import cli as auth_cli
-    from .ingestion import cli as ingestion_cli
-    from .metrics import cli as metrics_cli
+USAGE = """Garmin Dash CLI
 
-    if len(sys.argv) < 2:
-        print("Garmin Dash CLI")
-        print("Usage: gdash <command>")
-        print("Commands: auth, ingest, report")
-        print("Run 'gdash --help' for more info.")
-        sys.exit(1)
+Usage: gdash <command> [args]
 
-    command = sys.argv[1]
+Commands:
+  auth [status|start|code <CODE>]   Garmin authentication
+  ingest [backfill|schedule]        Data ingestion
+  report [today|weekly|monthly]     Metrics reports
+"""
+
+
+def main() -> int:
+    """Dispatch to a subcommand."""
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(USAGE)
+        return 0 if args else 1
+
+    command, rest = args[0], args[1:]
+    sys.argv = [f"gdash {command}", *rest]
 
     if command == "auth":
-        auth_cli()
+        from .auth.cli import main as run
     elif command == "ingest":
-        ingestion_cli()
+        from .ingestion.cli import main as run
     elif command == "report":
-        metrics_cli()
+        from .metrics.cli import main as run
     else:
         print(f"Unknown command: {command}")
-        print("Run 'gdash --help' for available commands.")
-        sys.exit(1)
+        print(USAGE)
+        return 2
+
+    return run() or 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

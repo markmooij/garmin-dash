@@ -1,53 +1,29 @@
 """CLI for data ingestion operations."""
 
+from __future__ import annotations
+
 import sys
-from datetime import datetime, timedelta
 
-from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-
-from .backfill import backfill_data
+from dotenv import load_dotenv
 
 
-def main():
+def main() -> int:
     """CLI entry point."""
-    if len(sys.argv) < 2:
-        print("Garmin Dash — Ingestion CLI")
-        print("Usage: gdash ingest <command>")
-        print("Commands: backfill, schedule")
-        print("Run 'gdash ingest --help' for more info.")
-        sys.exit(1)
+    load_dotenv()
 
-    command = sys.argv[1]
+    args = sys.argv[1:]
+    cmd = args[0] if args else "backfill"
 
-    if command == "backfill":
-        backfill_data()
-    elif command == "schedule":
-        schedule_sync()
-    else:
-        print(f"Unknown command: {command}")
-        sys.exit(1)
+    if cmd == "backfill":
+        from .backfill import backfill_data
+
+        days = int(args[1]) if len(args) > 1 else 7
+        return backfill_data(days)
+
+    print(f"Unknown command: {cmd}")
+    print("Usage: gdash ingest [backfill [DAYS]]")
+    return 2
 
 
-def schedule_sync():
-    """Schedule daily sync job."""
-    scheduler = BlockingScheduler()
-    print("📅 Scheduling sync job (every 15 minutes)...")
-    print()
-
-    def sync():
-        print("🔄 Starting sync...")
-        # Sync logic here
-        print("✅ Sync complete")
-
-    scheduler.add_job(
-        sync,
-        trigger=IntervalTrigger(minutes=15, jitter=5),
-        id="garmin-sync",
-        replace_existing=True,
-    )
-
-    try:
-        scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        print("🛑 Scheduler stopped")
+if __name__ == "__main__":
+    raise SystemExit(main())

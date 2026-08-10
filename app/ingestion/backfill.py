@@ -1,81 +1,83 @@
-"""Backfill script — sync last 90 days to JSON fixtures."""
+"""Endpoint inventory / backfill — dump raw Garmin responses to JSON fixtures.
+
+Phase 0 deliverable: capture real API payloads so the schema and the metrics
+golden tests are built against real shapes rather than assumptions.
+"""
+
+from __future__ import annotations
 
 import json
-import os
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Any, Callable
 
-from garth import GarminClient
-from garth.credentials import GarminCredentials
+from ..auth.session import resume_from_tokens
 
 
-def backfill_data():
-    """Backfill last 90 days to JSON fixtures."""
-    print("📥 Backfilling last 90 days to JSON fixtures")
-    print("=" * 60)
+FIXTURES_DIR = Path("tests/fixtures/garmin")
 
-    # Load credentials
+
+def _probe(name: str, fn: Callable[[], Any]) -> dict[str, Any]:
+    """Call one endpoint and capture the result or the error."""
     try:
-        credentials = GarminCredentials.from_token_store("data/garmin/garmin_tokens.json")
-    except FileNotFoundError:
-        print("❌ Token cache not found. Run 'gdash auth setup' first.")
-        return
+        data = fn()
+        return {"endpoint": name, "ok": True, "data": data}
+    except Exception as e:  # noqa: BLE001
+        return {"endpoint": name, "ok": False, "error": f"{type(e).__name__}: {e}"}
 
-    client = GarminClient(credentials=credentials)
 
-    # Set date range (last 90 days)
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=90)
+def backfill_data(days: int = 7) -> int:
+    """Dump a sample of each endpoint to tests/fixtures/garmin/."""
+    client = resume_from_tokens()
+    if client is None:
+        print("❌ Not authenticated. Run: gdash auth start")
+        return 1
 
-    print(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    print()
+    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fixtures_dir = Path("tests/fixtures")
-    fixtures_dir.mkdir(exist_ok=True)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    start = today - timedelta(days=days)
+    cday = yesterday.isoformat()
 
-    # Endpoints to backfill
-    endpoints = {
-        "sleep": "get_sleep_data",
-        "hrv": "get_hrv_data",
-        "stress": "get_stress_data",
-        "body_battery": "get_body_battery",
-        "respiration": "get_respiration_data",
-        "spo2": "get_spo2_data",
-        "activities": "get_activities",
-        "activities_details": "get_activity_details",
-        "hr_series": "get_activity_hr_in_timezones",
-        "exercise_sets": "get_activity_exercise_sets",
-        "daily_steps": "get_daily_steps",
-        "calories": "get_calories_daily",
-        "heart_rates": "get_heart_rates",
-        "training_status": "get_training_status",
-        "training_effect": "get_training_effect",
-        "vo2max": "get_endurance_score",
+    probes: dict[str, Callable[[], Any]] = {
+        "user_summary": lambda: client.get_user_summary(cday),
+        "sleep_data": lambda: client.get_sleep_data(cday),
+        "hrv_data": lambda: client.get_hrv_data(cday),
+        "stress_data": lambda: client.get_stress_data(cday),
+        "body_battery": lambda: client.get_body_battery(start.isoformat(), cday),
+        "respiration": lambda: client.get_respiration_data(cday),
+        "spo2": lambda: client.get_spo2_data(cday),
+        "heart_rates": lambda: client.get_heart_rates(cday),
+        "rhr_day": lambda: client.get_rhr_day(cday),
+        "training_status": lambda: client.get_training_status(cday),
+        "training_readiness": lambda: client.get_training_readiness(cday),
+        "max_metrics": lambda: client.get_max_metrics(cday),
+        "activities": lambda: client.get_activities(0, 20),
+        "activities_by_date": lambda: client.get_activities_by_date(
+            start.isoformat(), cday
+        ),
     }
 
-    for name, method in endpoints.items():
-        print(f"📥 Fetching {name}...")
-        try:
-            data = getattr(client, method)()
-            # Handle paginated results
-            if hasattr(data, 'get') and 'data' in data:
-                data = data['data']
-            elif isinstance(data, dict):
-                data = data.get('data', [data])
-            elif isinstance(data, list):
-                pass
-            else:
-                data = [data] if data else []
+    print(f"📥 Endpoint inventory  ({start} → {cday})")
+    print("=" * 60)
 
-            # Save to fixture file
-            fixture_file = fixtures_dir / f"{name}.json"
-            with open(fixture_file, 'w') as f:
-                json.dump(data, f, indent=2, default=str)
+    results = []
+    for name, fn in probes.items():
+        result = _probe(name, fn)
+        results.append(result)
 
-            print(f"   ✅ Saved {len(data)} records to {fixture_file}")
-        except Exception as e:
-            print(f"   ❌ Failed: {e}")
+        out = FIXTURES_DIR / f"{name}.json"
+        out.write_text(json.dumps(result["data"] if result["ok"] else result, indent=2, default=str))
 
+        if result["ok"]:
+            data = result["data"]
+            size = len(data) if isinstance(data, (list, dict)) else 1
+            print(f"  ✅ {name:<22} {size:>5} items  → {out}")
+        else:
+            print(f"  ❌ {name:<22} {result['error'][:60]}")
+
+    ok = sum(1 for r in results if r["ok"])
     print()
-    print("✅ Backfill complete!")
-    print(f"📁 Fixtures saved to: {fixtures_dir}")
+    print(f"✅ {ok}/{len(results)} endpoints captured → {FIXTURES_DIR}")
+    return 0

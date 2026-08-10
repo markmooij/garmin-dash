@@ -1,168 +1,103 @@
-"""CLI for Garmin authentication (MFA + token cache)."""
+"""CLI for Garmin authentication.
 
-import json
-import os
+Commands:
+    gdash auth status          Show whether cached tokens work
+    gdash auth start           Begin login (prompts for MFA if required)
+    gdash auth code <CODE>     Finish an MFA login with the emailed code
+"""
+
+from __future__ import annotations
+
 import sys
-from pathlib import Path
-from typing import Optional
 
-from garth import login
-from garth.auth_tokens import OAuth2Token
-from garth.http import Client
+from dotenv import load_dotenv
 
-
-class AuthSettings:
-    """Auth-specific settings."""
-
-    TOKEN_CACHE_DIR: str = "data/garmin"
-    TOKEN_CACHE_FILE: str = "garmin_tokens.json"
-
-    @property
-    def token_cache_path(self) -> Path:
-        """Return the token cache file path."""
-        return Path(self.TOKEN_CACHE_DIR) / self.TOKEN_CACHE_FILE
+from .session import (
+    AuthError,
+    TOKEN_DIR,
+    finish_login,
+    resume_from_tokens,
+    start_login,
+    whoami,
+)
 
 
-class GarminAuthCLI:
-    """Garmin authentication CLI."""
-
-    def __init__(self, settings: AuthSettings):
-        self.settings = settings
-
-    def setup(self):
-        """Interactive MFA login and token cache setup."""
-        print("🔐 Garmin Authentication Setup")
-        print("=" * 40)
-        print("This will guide you through MFA authentication.")
-        print()
-        print("Step 1: Open https://connect.garmin.com/oauth_start")
-        print("Step 2: Log in and grant permissions")
-        print("Step 3: Copy the verification code from the browser")
-        print()
-
-        # Wait for user to complete steps
-        input("Press Enter when you have the verification code...")
-
-        # Prompt for verification code
-        mfa_code = input("Enter verification code: ").strip()
-        if not mfa_code:
-            print("❌ Verification code is required.")
-            sys.exit(1)
-
-        # Perform MFA login using garth
-        try:
-            # Create OAuth2 token
-            token = OAuth2Token(
-                access_token=None,  # Will be filled after login
-                refresh_token=None,  # Will be filled after login
-                expires_in=0,
-                expires_at=None,
-            )
-            
-            # Login with MFA
-            client = Client()
-            client.login(mfa_code=mfa_code)
-            
-            # Save token to cache
-            client.save(token_store=self.settings.token_cache_path)
-            
-            print()
-            print("✅ Authentication successful!")
-            print(f"📁 Tokens saved to: {self.settings.token_cache_path}")
-            print()
-            print("Next: Run 'gdash auth' to test the connection.")
-            
-        except Exception as e:
-            print(f"❌ Authentication failed: {e}")
-            sys.exit(1)
-
-    def login(self):
-        """Test MFA login and save token cache."""
-        print("🔐 Testing Garmin MFA Login")
-        print("=" * 40)
-
-        try:
-            # Load existing token
-            client = Client()
-            client.load(token_store=self.settings.token_cache_path)
-            
-            # Check if token is valid
-            if client.status_code == 200:
-                print("✅ Token is valid!")
-                print(f"📁 Token cache location: {self.settings.token_cache_path}")
-                print()
-                print("Next: Run 'gdash ingest-backfill' to sync your data.")
-            else:
-                print("❌ Token is invalid or expired. Run 'gdash auth setup' to re-authenticate.")
-                sys.exit(1)
-                
-        except Exception as e:
-            print(f"❌ Garth error: {e}")
-            sys.exit(1)
-
-    def interactive_login(self):
-        """Interactive MFA login flow."""
-        print("🔐 Garmin MFA Login")
-        print("=" * 40)
-        print("This will open a browser and guide you through MFA.")
-        print()
-        print("Step 1: Open https://connect.garmin.com/oauth_start in your browser")
-        print("Step 2: Log in and grant permissions")
-        print("Step 3: Copy the verification code from the browser")
-        print()
-        print("Press Enter when you're ready to enter the verification code...")
-        input()
-
-        mfa_code = input("Enter verification code: ").strip()
-        if not mfa_code:
-            print("❌ Verification code is required.")
-            sys.exit(1)
-
-        try:
-            # Create OAuth2 token
-            token = OAuth2Token(
-                access_token=None,
-                refresh_token=None,
-                expires_in=0,
-                expires_at=None,
-            )
-            
-            # Login with MFA
-            client = Client()
-            client.login(mfa_code=mfa_code)
-            
-            # Save token to cache
-            client.save(token_store=self.settings.token_cache_path)
-            
-            print()
-            print("✅ Authentication successful!")
-            print(f"📁 Tokens saved to: {self.settings.token_cache_path}")
-            print()
-            print("Next: Run 'gdash auth' to test the connection.")
-            
-        except Exception as e:
-            print(f"❌ Garth error: {e}")
-            sys.exit(1)
+def cmd_status() -> int:
+    """Report whether cached tokens are usable."""
+    client = resume_from_tokens()
+    if client is None:
+        print("❌ Not authenticated (no usable tokens).")
+        print("   Run: gdash auth start")
+        return 1
+    print(f"✅ Authenticated as: {whoami(client)}")
+    print(f"📁 Tokens: {TOKEN_DIR}")
+    return 0
 
 
-def main():
-    """CLI main entry point."""
-    settings = AuthSettings()
-    cli = GarminAuthCLI(settings)
+def cmd_start() -> int:
+    """Start login; prompt for the MFA code if Garmin asks for one."""
+    client = resume_from_tokens()
+    if client is not None:
+        print(f"✅ Already authenticated as: {whoami(client)}")
+        return 0
 
-    # Parse arguments
-    if len(sys.argv) > 1:
-        arg = sys.argv[1]
+    state, client = start_login()
 
-        if arg == "setup":
-            cli.setup()
-        elif arg == "test":
-            cli.login()
-        else:
-            cli.interactive_login()
-    else:
-        cli.interactive_login()
+    if state == "authenticated":
+        print(f"✅ Authenticated as: {whoami(client)}")
+        print(f"📁 Tokens saved to: {TOKEN_DIR}")
+        return 0
+
+    print("📧 Garmin sent an MFA code to your email/phone.")
+    print()
+    try:
+        code = input("Enter MFA code: ").strip()
+    except EOFError:
+        print("No TTY available. Run instead:")
+        print("   gdash auth code <CODE>")
+        return 2
+
+    client = finish_login(code)
+    print(f"✅ Authenticated as: {whoami(client)}")
+    print(f"📁 Tokens saved to: {TOKEN_DIR}")
+    return 0
+
+
+def cmd_code(code: str) -> int:
+    """Finish a pending MFA login non-interactively."""
+    client = finish_login(code)
+    print(f"✅ Authenticated as: {whoami(client)}")
+    print(f"📁 Tokens saved to: {TOKEN_DIR}")
+    return 0
+
+
+def main() -> int:
+    """CLI entry point."""
+    load_dotenv()
+
+    args = sys.argv[1:]
+    cmd = args[0] if args else "status"
+
+    try:
+        if cmd == "status":
+            return cmd_status()
+        if cmd == "start":
+            return cmd_start()
+        if cmd == "code":
+            if len(args) < 2:
+                print("Usage: gdash auth code <MFA_CODE>")
+                return 2
+            return cmd_code(args[1])
+        print(f"Unknown command: {cmd}")
+        print("Usage: gdash auth [status|start|code <CODE>]")
+        return 2
+    except AuthError as e:
+        print(f"❌ {e}")
+        return 1
+    except Exception as e:  # noqa: BLE001
+        print(f"❌ Login failed: {type(e).__name__}: {e}")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

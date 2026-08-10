@@ -40,3 +40,6 @@ backups/
 .vscode/
 *.swp
 .DS_Store
+
+# Raw personal Garmin payloads (health data — never commit)
+tests/fixtures/garmin/

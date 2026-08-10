@@ -220,7 +220,3 @@ def test_api_invalid_date(client):
 
 
 
-def test_debug2(client):
-    r = client.get("/api/intraday?date=2026-08-09")
-    print("\nDEBUG2:", r.status_code, r.text[:250])
-    assert True

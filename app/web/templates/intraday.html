@@ -34,6 +34,8 @@
 </div>
 </div>
 
+<script src="/static/vendor/uplot.min.js"></script>
+<script src="/static/js/charts.js"></script>
 <script>
 function intradayPage() {
   return {
@@ -54,7 +56,11 @@ function intradayPage() {
       this.loading = false;
 
       const el = document.getElementById("chart-intraday");
-      if (this.chart) { this.chart.destroy(); this.chart = null; }
+      if (this.chart) {
+        if (this.chart._gdashRO) this.chart._gdashRO.disconnect();
+        this.chart.destroy();
+        this.chart = null;
+      }
 
       const series = data.series || {};
       const hr = series.heart_rate || [];

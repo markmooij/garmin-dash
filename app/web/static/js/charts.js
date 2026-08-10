@@ -69,7 +69,7 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
       axes[1] = { ...axes[1], ...conf.axis };
     }
   }
-  return new uPlot(
+  const u = new uPlot(
     {
       ...GDASH.seriesOpts,
       width: el.clientWidth || 800,
@@ -77,11 +77,15 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
       scales: opts.scales || { "%": { auto: true } },
       legend: { show: true, live: true },
       axes,
-      fmtDate: (d) => new Date(d[0] * 1000).toLocaleDateString("nl-NL", { day: "2-digit", month: "short" }),
+      // uPlot expects fmtDate to RETURN a formatter function
+      fmtDate: () => (d) =>
+        new Date(d[0] * 1000).toLocaleDateString("nl-NL", { day: "2-digit", month: "short" }),
     },
     data,
     el
   );
+  GDASH.autoResize(el, u, opts.height || 260);
+  return u;
 };
 
 /* Chart with explicit second scale (e.g. HR + BB). */
@@ -94,7 +98,7 @@ GDASH.twoScaleChart = function (el, series, x, yArrays, opts = {}) {
     { stroke: "#71717a", grid: { stroke: "#27272a" }, ticks: { stroke: "#3f3f46" }, size: 48 },
     { stroke: "#71717a", grid: { width: 0 }, ticks: { stroke: "#3f3f46" }, size: 44, scale: "bb" },
   ];
-  return new uPlot(
+  const u = new uPlot(
     {
       ...GDASH.seriesOpts,
       width: el.clientWidth || 800,
@@ -102,10 +106,30 @@ GDASH.twoScaleChart = function (el, series, x, yArrays, opts = {}) {
       scales,
       legend: { show: true, live: true },
       axes,
-      fmtDate: (d) => new Date(d[0] * 1000).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }),
+      fmtDate: () => (d) =>
+        new Date(d[0] * 1000).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }),
       bands: opts.bands || [],
     },
     [x, ...yArrays],
     el
   );
+  GDASH.autoResize(el, u, opts.height || 300);
+  return u;
+};
+
+/* Keep charts sized to their container (Tailwind's browser build applies
+   CSS asynchronously, so charts may init before layout exists). */
+GDASH.autoResize = function (el, u, height) {
+  const resize = () => {
+    if (!el.isConnected) {
+      ro.disconnect();
+      return;
+    }
+    const w = el.clientWidth;
+    if (w > 0) u.setSize({ width: w, height });
+  };
+  const ro = new ResizeObserver(resize);
+  ro.observe(el);
+  resize();
+  u._gdashRO = ro;
 };

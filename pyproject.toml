@@ -66,3 +66,8 @@ exclude = ["tests/"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --strict-markers"
+
+[dependency-groups]
+dev = [
+    "playwright>=1.62.0",
+]

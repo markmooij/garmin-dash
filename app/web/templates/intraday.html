@@ -84,6 +84,7 @@ function intradayPage() {
       const yBB = dBB.map(p => p[1]);
 
       const bands = (data.activity_windows || []).map(w => ({
+        series: [1],  // shade across the full HR scale height
         from: w.start_s,
         to: w.end_s,
         fill: "rgba(52, 211, 153, 0.06)",

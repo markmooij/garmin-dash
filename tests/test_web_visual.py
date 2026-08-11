@@ -114,6 +114,13 @@ def test_trends_charts_render(browser, server):  # noqa: ARG001
     assert len(sizes) == 5
     # canvases must be laid out (not the 300px default before CSS applied)
     assert all(w > 400 for w in sizes), sizes
+    # series config must be aligned: uPlot maps series[0] to the x axis, so
+    # the legend must show real series labels, not only the x-axis row
+    legend = page.evaluate(
+        'document.querySelector("#chart-recovery .u-legend").textContent'
+    )
+    assert "Herstel" in legend, legend
+    assert "Time" not in legend, legend
     page.close()
 
 
@@ -138,9 +145,16 @@ def test_intraday_chart_draws_and_navigates(browser, server):  # noqa: ARG001
         """(() => {
             const i = document.querySelector('input[type=date]');
             i.value = '2026-08-10';
-            i.dispatchEvent(new Event('change'));
+            i.dispatchEvent(new Event('input', {bubbles: true}));
+            i.dispatchEvent(new Event('change', {bubbles: true}));
         })()"""
     )
     page.wait_for_timeout(2000)
     assert page.evaluate('!!document.querySelector("#chart-intraday canvas")')
+    # Alpine's x-model must have picked up the new date and rebuilt the chart
+    state = page.evaluate(
+        """(() => { const xd = document.querySelector('[x-data]')._x_dataStack[0];
+                    return { day: xd.day, hasData: xd.hasData }; })()"""
+    )
+    assert state == {"day": "2026-08-10", "hasData": True}, state
     page.close()

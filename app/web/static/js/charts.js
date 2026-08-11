@@ -46,11 +46,15 @@ const GDASH = {
 };
 
 /* Build a uPlot line chart into `el`.
-   series: [{ label, color, width?, fill?, scale? }]
+   series: [{ label, color, width?, fill?, scale? }] — NOTE: uPlot maps
+   series array index 0 to the x axis, so we prepend an empty x-series
+   config; `series` describes the y series only.
    x: epoch-seconds array; y: parallel arrays (nulls allowed). */
 GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
   const data = [x, ...yArrays];
-  const uplotSeries = series.map((s, i) => ({
+  // uPlot maps series index 0 to the x axis; label it so the legend row
+  // shows something meaningful instead of the default "Time".
+  const uplotSeries = [{ label: opts.xLabel || "datum" }].concat(series.map((s, i) => ({
     label: s.label,
     stroke: s.color,
     width: s.width || 1.5,
@@ -58,11 +62,12 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
     scale: s.scale || "%",
     points: { show: false },
     spanGaps: true,
-    value: s.value,
-  }));
+    // uPlot calls value(self, raw, seriesIdx, idx) — unwrap the raw datum
+    value: (self, v) => (s.value ? s.value(v) : v),
+  })));
   const axes = [
-    { stroke: "#71717a", grid: { stroke: "#27272a" }, ticks: { stroke: "#3f3f46" }, size: 48 },
-    { stroke: "#71717a", grid: { width: 0 }, ticks: { stroke: "#3f3f46" }, size: 44, scale: "%" },
+    { stroke: "#71717a", grid: { stroke: "#27272a" }, ticks: { stroke: "#3f3f46" }, size: 48, label: "datum" },
+    { stroke: "#71717a", grid: { width: 0 }, ticks: { stroke: "#3f3f46" }, size: 44, scale: "%", label: "waarde" },
   ];
   if (opts.scales) {
     for (const [key, conf] of Object.entries(opts.scales)) {
@@ -75,11 +80,15 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
       width: el.clientWidth || 800,
       height: opts.height || 260,
       scales: opts.scales || { "%": { auto: true } },
+      series: uplotSeries,
       legend: { show: true, live: true },
       axes,
-      // uPlot expects fmtDate to RETURN a formatter function
-      fmtDate: () => (d) =>
-        new Date(d[0] * 1000).toLocaleDateString("nl-NL", { day: "2-digit", month: "short" }),
+      // uPlot expects fmtDate to RETURN a formatter function; it is called
+      // with Date objects for ticks and epoch seconds for the legend row.
+      fmtDate: () => (d) => {
+        const dt = d instanceof Date ? d : new Date((Array.isArray(d) ? d[0] : d) * 1000);
+        return isNaN(dt.getTime()) ? "" : dt.toLocaleDateString("nl-NL", { day: "2-digit", month: "short" });
+      },
     },
     data,
     el
@@ -88,33 +97,70 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
   return u;
 };
 
-/* Chart with explicit second scale (e.g. HR + BB). */
+/* Chart with explicit second scale (e.g. HR + BB).
+   Same contract as lineChart: series[0] in uPlot is the x axis, so the
+   passed `series` array is prepended with an empty x-series config. */
 GDASH.twoScaleChart = function (el, series, x, yArrays, opts = {}) {
   const scales = opts.scales || {
     hr: { auto: true },
     bb: { auto: true },
   };
   const axes = [
-    { stroke: "#71717a", grid: { stroke: "#27272a" }, ticks: { stroke: "#3f3f46" }, size: 48 },
-    { stroke: "#71717a", grid: { width: 0 }, ticks: { stroke: "#3f3f46" }, size: 44, scale: "bb" },
+    { stroke: "#71717a", grid: { stroke: "#27272a" }, ticks: { stroke: "#3f3f46" }, size: 48, label: "tijd" },
+    { stroke: "#71717a", grid: { width: 0 }, ticks: { stroke: "#3f3f46" }, size: 44, scale: "bb", label: "waarde" },
   ];
+  const uplotSeries = [{ label: opts.xLabel || "tijd" }].concat(series.map((s, i) => ({
+    label: s.label,
+    stroke: s.color,
+    width: s.width || 1.5,
+    fill: s.fill ? s.color + "22" : undefined,
+    scale: s.scale,
+    points: { show: false },
+    spanGaps: true,
+    // uPlot calls value(self, raw, seriesIdx, idx) — unwrap the raw datum
+    value: (self, v) => (s.value ? s.value(v) : v),
+  })));
   const u = new uPlot(
     {
       ...GDASH.seriesOpts,
       width: el.clientWidth || 800,
       height: opts.height || 300,
       scales,
+      series: uplotSeries,
       legend: { show: true, live: true },
       axes,
-      fmtDate: () => (d) =>
-        new Date(d[0] * 1000).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }),
-      bands: opts.bands || [],
+      fmtDate: () => (d) => {
+        const dt = d instanceof Date ? d : new Date((Array.isArray(d) ? d[0] : d) * 1000);
+        return isNaN(dt.getTime()) ? "" : dt.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+      },
+      // uPlot's built-in bands need a second series entry (crashes with
+      // series:[1]); paint time-range shading ourselves in a draw hook.
+      hooks: { draw: [GDASH.drawBands] },
     },
     [x, ...yArrays],
     el
   );
+  u._gdashBands = opts.bands || [];
   GDASH.autoResize(el, u, opts.height || 300);
   return u;
+};
+
+/* Paint time-range bands (e.g. activity windows) across the plot area. */
+GDASH.drawBands = function (u) {
+  const bands = u._gdashBands;
+  if (!bands || !bands.length) return;
+  const { ctx, bbox } = u;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(bbox.left, bbox.top, bbox.width, bbox.height);
+  ctx.clip();
+  for (const b of bands) {
+    const x0 = u.valToPosH(b.from, "x", true);
+    const x1 = u.valToPosH(b.to, "x", true);
+    ctx.fillStyle = b.fill;
+    ctx.fillRect(bbox.left + x0, bbox.top, Math.max(0, x1 - x0), bbox.height);
+  }
+  ctx.restore();
 };
 
 /* Keep charts sized to their container (Tailwind's browser build applies

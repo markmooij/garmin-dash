@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     SYNC_INTERVAL_MINUTES: str = "15"
     SYNC_DAYS_BACK: str = "3"
 
+    # Local day boundary for intraday views and reports
+    # (Garmin timestamps are stored in UTC; the UI buckets by this zone)
+    TIMEZONE: str = "Europe/Amsterdam"
+
     # ── Metrics engine (Phase 2) ──────────────────────────────────────────
     # TRIMP normalization: session HRr = (HR - rest) / (max - rest).
     # Rest HR per-session = that day's resting_heart_rate; fallback constant.

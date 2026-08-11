@@ -64,7 +64,9 @@ function intradayPage() {
 
       const series = data.series || {};
       const hr = series.heart_rate || [];
-      const stress = series.stress || [];
+      // Garmin marks missing stress readings with a -1.0 sentinel; drop them
+      // so the step line holds the last real value instead of dipping to -1
+      const stress = (series.stress || []).filter(p => p[1] >= 0);
       const bb = series.body_battery || [];
       this.hasData = hr.length + stress.length + bb.length > 0;
 
@@ -75,13 +77,17 @@ function intradayPage() {
       const dStress = GDASH.downsample(stress, 700);
       const dBB = GDASH.downsample(bb, 700);
 
-      // align x: use HR timestamps as x-axis; fall back to stress/bb
+      // x grid: use HR timestamps; fall back to stress/bb
       let x = dHR.map(p => p[0]);
       if (x.length === 0) x = dStress.map(p => p[0]);
       if (x.length === 0) x = dBB.map(p => p[0]);
-      const yHR = dHR.map(p => p[1]);
-      const yStress = dStress.map(p => p[1]);
-      const yBB = dBB.map(p => p[1]);
+      // Align every series by time, not by index: the body-battery source is
+      // sparse value-change events (~6-12/day), so its values must be placed
+      // at their real timestamps and forward-filled onto the x grid (step
+      // line), not index-paired with HR (which clusters them at 00:00).
+      const yHR = GDASH.alignByTime(x, dHR);
+      const yStress = GDASH.alignByTime(x, dStress);
+      const yBB = GDASH.alignByTime(x, dBB);
 
       const bands = (data.activity_windows || []).map(w => ({
         series: [1],  // shade across the full HR scale height
@@ -93,7 +99,7 @@ function intradayPage() {
       this.chart = GDASH.twoScaleChart(el,
         [
           { label: "HR", color: GDASH.colors.red, scale: "hr", value: v => v == null ? "–" : v.toFixed(0) },
-          { label: "Stress", color: GDASH.colors.yellow, scale: "hr", value: v => v == null ? "–" : v.toFixed(0) },
+          { label: "Stress", color: GDASH.colors.yellow, scale: "hr", value: v => v == null || v < 0 ? "–" : v.toFixed(0) },
           { label: "Body Battery", color: GDASH.colors.emerald, scale: "bb", value: v => v == null ? "–" : v.toFixed(0) },
         ],
         x, [yHR, yStress, yBB],

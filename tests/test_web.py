@@ -152,6 +152,30 @@ def test_intraday_series_and_windows(seeded: Session):
     w = d["activity_windows"][0]
     assert w["type"] == "strength_training"
     assert w["end_s"] - w["start_s"] == 3600
+    # epochs must be true UTC; naive .timestamp() would shift every sample
+    # by the local UTC offset (Europe/Amsterdam = +2)
+    assert d["series"]["heart_rate"][0][0] == 1786233600
+    assert d["series"]["body_battery"][0][0] == 1786233600
+
+
+def test_intraday_local_day_bucket(seeded: Session):
+    """A local day spans 22:00Z→22:00Z (UTC+2), not a UTC day."""
+    ts = (
+        datetime(2026, 8, 8, 23, 0, tzinfo=UTC),   # 01:00 local Aug 9
+        datetime(2026, 8, 9, 21, 30, tzinfo=UTC),  # 23:30 local Aug 9
+        datetime(2026, 8, 9, 22, 30, tzinfo=UTC),  # 00:30 local Aug 10
+    )
+    for t in ts:
+        seeded.add(IntradaySeries(user_id=1, kind="heart_rate", ts_gmt=t, value=60.0))
+    seeded.commit()
+    d9 = query.intraday_for(seeded, date(2026, 8, 9))
+    hrs9 = [r[0] for r in d9["series"]["heart_rate"]]
+    assert hrs9[0] == datetime(2026, 8, 8, 23, 0, tzinfo=UTC).timestamp()
+    assert datetime(2026, 8, 9, 21, 30, tzinfo=UTC).timestamp() in hrs9
+    assert datetime(2026, 8, 9, 22, 30, tzinfo=UTC).timestamp() not in hrs9
+    d10 = query.intraday_for(seeded, date(2026, 8, 10))
+    hrs10 = [r[0] for r in d10["series"]["heart_rate"]]
+    assert datetime(2026, 8, 9, 22, 30, tzinfo=UTC).timestamp() in hrs10
 
 
 # ── HTTP layer ─────────────────────────────────────────────────────────

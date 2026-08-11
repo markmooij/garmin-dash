@@ -140,6 +140,18 @@ def test_intraday_chart_draws_and_navigates(browser, server):  # noqa: ARG001
         })()"""
     )
     assert painted
+    # the sparse body-battery line must be time-aligned: hovering mid-day
+    # must show a real value, not a cluster of samples at 00:00 (regression:
+    # values used to be index-paired onto the HR x-axis)
+    box = page.evaluate('document.querySelector("#chart-intraday .u-wrap").getBoundingClientRect().toJSON()')
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(300)
+    legend = page.evaluate(
+        'document.querySelector("#chart-intraday .u-legend").textContent.replace(/\\s+/g, " ").trim()'
+    )
+    assert "Body Battery" in legend
+    bb_val = legend.split("Body Battery")[1].strip()
+    assert bb_val.isdigit() and 0 <= int(bb_val) <= 100, legend
     # day navigation via the date input still renders a chart
     page.evaluate(
         """(() => {

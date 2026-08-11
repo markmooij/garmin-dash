@@ -25,6 +25,20 @@ const GDASH = {
     return out;
   },
 
+  /* Place sparse [ts, value] samples onto a sorted x grid by TIME, forward-
+     filling the last known value (step line). Before the first sample the
+     value is null (gap). Both inputs must be sorted ascending by ts. */
+  alignByTime(xGrid, samples) {
+    const y = new Array(xGrid.length).fill(null);
+    if (!samples || !samples.length) return y;
+    let i = 0;
+    for (let k = 0; k < xGrid.length; k++) {
+      while (i + 1 < samples.length && samples[i + 1][0] <= xGrid[k]) i++;
+      if (samples[i][0] <= xGrid[k]) y[k] = samples[i][1];
+    }
+    return y;
+  },
+
   seriesOpts: {
     grid: { stroke: "#27272a", width: 1 },
     cursor: { stroke: "#71717a" },

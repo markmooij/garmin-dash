@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -15,6 +16,7 @@ from ..db.models import (
     IntradaySeries,
     SleepSession,
 )
+from ..settings import get_settings
 
 
 if TYPE_CHECKING:
@@ -104,6 +106,7 @@ def summary_for(session: Session, day: date) -> dict:
             "rhr": wellness.resting_heart_rate if wellness else None,
             "avg_stress": wellness.avg_stress if wellness else None,
             "bb_at_wake": wellness.bb_at_wake if wellness else None,
+            "bb_most_recent": wellness.bb_most_recent if wellness else None,
             "bb_highest": wellness.bb_highest if wellness else None,
             "bb_lowest": wellness.bb_lowest if wellness else None,
             "steps": wellness.steps if wellness else None,
@@ -211,21 +214,48 @@ def trends_for(session: Session, days: int = 90, end: date | None = None) -> dic
 
 
 def intraday_for(session: Session, day: date) -> dict:
-    """1-min series (stress, HR, body battery) + activity windows for a day."""
-    day_start = datetime.combine(day, time.min, tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
+    """1-min series (stress, HR, body battery) + activity windows for a day.
+
+    The day is interpreted in the configured local timezone; stored datetimes
+    are naive UTC, so epochs must be converted explicitly (naive.timestamp()
+    would assume local time and shift every sample by the UTC offset).
+    """
+    tz = ZoneInfo(get_settings().TIMEZONE)
+    day_start_local = datetime.combine(day, time.min, tzinfo=tz)
+    day_start_utc = day_start_local.astimezone(UTC).replace(tzinfo=None)
+    day_end_utc = (day_start_local + timedelta(days=1)).astimezone(UTC).replace(tzinfo=None)
     rows = session.execute(
         select(IntradaySeries)
         .where(
             IntradaySeries.user_id == USER_ID,
-            IntradaySeries.ts_gmt >= day_start,
-            IntradaySeries.ts_gmt < day_end,
+            IntradaySeries.ts_gmt >= day_start_utc,
+            IntradaySeries.ts_gmt < day_end_utc,
         )
         .order_by(IntradaySeries.ts_gmt)
     ).scalars().all()
     series: dict[str, list[list[float]]] = {}
     for r in rows:
-        series.setdefault(r.kind, []).append([int(r.ts_gmt.timestamp()), r.value])
+        series.setdefault(r.kind, []).append(
+            [int(r.ts_gmt.replace(tzinfo=UTC).timestamp()), r.value]
+        )
+
+    # Anchor for the sparse body-battery step line: the last event before the
+    # day starts, so the first hours of the day show a real value.
+    if "body_battery" in series:
+        anchor = session.execute(
+            select(IntradaySeries)
+            .where(
+                IntradaySeries.user_id == USER_ID,
+                IntradaySeries.kind == "body_battery",
+                IntradaySeries.ts_gmt < day_start_utc,
+            )
+            .order_by(IntradaySeries.ts_gmt.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if anchor is not None:
+            series["body_battery"].insert(
+                0, [int(anchor.ts_gmt.replace(tzinfo=UTC).timestamp()), anchor.value]
+            )
 
     activities = session.execute(
         select(Activity)
@@ -241,8 +271,8 @@ def intraday_for(session: Session, day: date) -> dict:
             {
                 "name": a.activity_name,
                 "type": a.activity_type,
-                "start_s": int(a.start_time_gmt.timestamp()),
-                "end_s": int(a.start_time_gmt.timestamp()) + int(a.duration),
+                "start_s": int(a.start_time_gmt.replace(tzinfo=UTC).timestamp()),
+                "end_s": int(a.start_time_gmt.replace(tzinfo=UTC).timestamp()) + int(a.duration),
             }
         )
 

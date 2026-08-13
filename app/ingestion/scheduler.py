@@ -13,10 +13,20 @@ import logging
 import signal
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..settings import get_settings
 from .sync import incremental_sync
+
+
+def _parse_report_time(value: str) -> tuple[int, int]:
+    """'07:30' → (7, 30); falls back to (7, 30) on garbage."""
+    try:
+        hour, minute = value.split(":")
+        return int(hour), int(minute)
+    except (ValueError, AttributeError):
+        return 7, 30
 
 
 logger = logging.getLogger("garmin_dash.ingestion.scheduler")
@@ -46,6 +56,26 @@ def run_sync_pass() -> None:
         logger.exception("Sync pass failed — will retry on next interval")
 
 
+def run_morning_report_job() -> None:
+    """Send the Signal morning briefing (no-op when Signal is disabled)."""
+    try:
+        from ..messaging.loop import run_morning_report
+
+        run_morning_report()
+    except Exception:  # noqa: BLE001
+        logger.exception("Morning report job failed")
+
+
+def run_command_poll_job() -> None:
+    """Answer Signal commands (no-op when Signal is disabled)."""
+    try:
+        from ..messaging.loop import poll_commands
+
+        poll_commands()
+    except Exception:  # noqa: BLE001
+        logger.exception("Command poll job failed")
+
+
 def schedule() -> None:
     """Start the blocking scheduler."""
     settings = get_settings()
@@ -55,7 +85,7 @@ def schedule() -> None:
     signal.signal(signal.SIGINT, _handle_stop)
     signal.signal(signal.SIGTERM, _handle_stop)
 
-    scheduler = BlockingScheduler(timezone="UTC")
+    scheduler = BlockingScheduler(timezone=get_settings().TIMEZONE)
     _scheduler_ref.append(scheduler)
     scheduler.add_job(
         run_sync_pass,
@@ -65,6 +95,34 @@ def schedule() -> None:
         coalesce=True,
         max_instances=1,
     )
+
+    if settings.SIGNAL_ENABLED:
+        hour, minute = _parse_report_time(settings.SIGNAL_REPORT_TIME)
+        scheduler.add_job(
+            run_morning_report_job,
+            trigger=CronTrigger(hour=hour, minute=minute),
+            id="signal-morning-report",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        poll_min = int(settings.SIGNAL_COMMAND_POLL_MINUTES) or 5
+        scheduler.add_job(
+            run_command_poll_job,
+            trigger=IntervalTrigger(minutes=poll_min),
+            id="signal-command-poll",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        logger.info(
+            "Signal jobs scheduled: report %02d:%02d, command poll every %d min",
+            hour,
+            minute,
+            poll_min,
+        )
+    else:
+        logger.info("Signal disabled — no morning report / command polling")
 
     logger.info(
         "Sync scheduler started: every %d min (±2 min jitter), days_back=%d",

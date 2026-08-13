@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # Signal Messenger (libs/signal_messenger)
     SIGNAL_CLI_API_URL: str = "http://localhost:8080"
     SIGNAL_CLI_TOKEN: str | None = None
+    # Phase 4: flip on once the number is provisioned (see ROADMAP)
+    SIGNAL_ENABLED: bool = False
+    SIGNAL_ACCOUNT: str | None = None  # the number registered in signal-cli
+    SIGNAL_RECIPIENT: str | None = None  # number that receives reports/commands
+    SIGNAL_REPORT_TIME: str = "07:30"  # morning briefing (local, Europe/Amsterdam)
+    SIGNAL_COMMAND_POLL_MINUTES: int = 5
 
     # Garmin
     GARMINTOKENS: str | None = None

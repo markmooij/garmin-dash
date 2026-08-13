@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,8 @@ from ..settings import get_settings
 
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from .models import User
 
 
@@ -49,6 +52,20 @@ def create_session_factory(db_path: str | None = None) -> sessionmaker[Session]:
 
 # Default factory for the app; tests create their own.
 _session_factory = create_session_factory()
+
+
+@contextlib.contextmanager
+def session_scope() -> Iterator[Session]:
+    """Transactional session context: commit on success, rollback on error."""
+    session = _session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def get_session() -> Session:

@@ -211,6 +211,14 @@ command parsing (`/summary`, `/strain`, `/recovery`, `/sleep`) routed through th
 *Done when:* report arrives unattended daily; commands answer from the Pi over the weekend;
 the package builds/installs standalone (`pip install ./libs/signal_messenger` in a scratch venv).
 
+**Status (prepared):** `libs/signal_messenger` complete (Messenger ABC + SignalRestClient,
+7 unit tests, standalone install verified in a scratch venv); app-side briefing + command
+router (`app/messaging/`, tested against a fake messenger); scheduler jobs (morning report
+at `SIGNAL_REPORT_TIME`, command poll every `SIGNAL_COMMAND_POLL_MINUTES`) — all gated by
+`SIGNAL_ENABLED=false`; compose `signal-api` service present in both profiles.
+**Remaining:** provision the number (see open item below), set `SIGNAL_ENABLED=true` +
+`SIGNAL_ACCOUNT`/`SIGNAL_RECIPIENT`, start the scheduler, one unattended end-to-end run.
+
 ### Phase 5 — Journal & Correlation Insights
 Evening survey (Signal-first, web fallback); pre-registered questions + free tags; gated insight
 engine (≥5/≥5 samples, effect size + direction); insights surfaced in dashboard + weekly Signal digest.
@@ -260,5 +268,8 @@ confirmed; CHANGELOG; docs for the signal_messenger package.
 - **Registry**: GHCR assumed for `docker/build-push.sh`; swap `REGISTRY` env for a self-hosted
   `registry:2`/Harbor if preferred.
 - **Signal number**: decide SIM-vs-secondary-device-linking before Phase 4 setup.
+  *Recommendation: QR secondary-device link* — no extra SIM/costs; provisioning is a
+  one-time scan of `/v1/qrcodes` (see `libs/signal_messenger/README.md`); caveat: the
+  phone's Signal app must keep running. The SIM route needs a spare SIM + SMS code.
 - **LLM endpoint**: confirm it speaks the OpenAI chat-completions contract (vLLM, llama.cpp
   server, or a proxy all do).

@@ -1,0 +1,108 @@
+"""Signal REST client — httpx implementation of the Messenger interface.
+
+Talks to the HTTP API of `bbernhard/signal-cli-rest-api`:
+
+  * POST /v2/send          — send a message to one recipient
+  * GET  /v1/receive/{nr}  — poll incoming messages (consuming)
+  * GET  /v1/health        — health probe
+
+Provisioning (linking the number via QR or registering a SIM) is an
+operational step done against the container directly — see README.md —
+not part of this client.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+
+from .base import Message, Messenger
+
+logger = logging.getLogger("signal_messenger.signal_rest")
+
+_API_TOKEN_HEADER = "X-Signal-Cli-Rest-Api-Token"
+
+
+class SignalRestClient(Messenger):
+    """Messenger backed by signal-cli-rest-api."""
+
+    def __init__(
+        self,
+        base_url: str,
+        account: str | None = None,
+        token: str | None = None,
+        timeout: float = 15.0,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.account = account
+        self.token = token
+        self.timeout = timeout
+        # injectable for tests; otherwise a plain pooled client
+        self._client = client or httpx.Client(timeout=timeout)
+
+    # -- low-level --------------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        return {_API_TOKEN_HEADER: self.token} if self.token else {}
+
+    def _post(self, path: str, payload: dict[str, Any]) -> httpx.Response:
+        resp = self._client.post(f"{self.base_url}{path}", json=payload, headers=self._headers())
+        resp.raise_for_status()
+        return resp
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
+        resp = self._client.get(f"{self.base_url}{path}", params=params, headers=self._headers())
+        resp.raise_for_status()
+        return resp
+
+    # -- Messenger --------------------------------------------------------
+
+    def send_message(self, recipient: str, text: str) -> str | None:
+        """Send `text` to a single recipient (E.164, e.g. "+31612345678")."""
+        resp = self._post(
+            "/v2/send",
+            {
+                "message": text,
+                "numberType": "single",
+                "recipients": [recipient],
+                "textMode": "normal",
+            },
+        )
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        # v2/send responds 201 with {"id": ..., "timestamp": ...}
+        return body.get("id") if isinstance(body, dict) else None
+
+    def receive_messages(self, timeout: int = 10) -> list[Message]:
+        """Poll for incoming messages (consuming). Requires `account`."""
+        if not self.account:
+            raise ValueError("SignalRestClient.receive_messages needs `account` (the registered number)")
+        resp = self._get(f"/v1/receive/{self.account}", params={"timeout": timeout})
+        messages: list[Message] = []
+        for entry in resp.json() or []:
+            if not isinstance(entry, dict):
+                continue
+            envelope = entry.get("envelope") or {}
+            data = entry.get("dataMessage") or {}
+            sender = envelope.get("source") or envelope.get("sourceUuid") or "unknown"
+            text = data.get("message")
+            ts = int(data.get("timestamp") or envelope.get("timestamp") or 0) // 1000
+            if text:
+                messages.append(Message(sender=sender, text=str(text), timestamp=ts, raw=entry))
+        return messages
+
+    def health(self) -> bool:
+        try:
+            resp = self._get("/v1/health")
+            return resp.status_code == 200
+        except httpx.HTTPError:
+            logger.warning("signal-api health check failed", exc_info=True)
+            return False
+
+    def close(self) -> None:
+        self._client.close()

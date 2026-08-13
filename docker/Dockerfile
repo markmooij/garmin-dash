@@ -31,6 +31,10 @@ COPY app/cli.py .
 RUN pip install --no-cache-dir \
     -e .
 
+# Standalone Signal messenger library (Phase 4)
+COPY libs/signal_messenger/ ./libs/signal_messenger/
+RUN pip install --no-cache-dir ./libs/signal_messenger
+
 # Copy application code
 COPY app/ ./app/
 COPY tests/ ./tests/

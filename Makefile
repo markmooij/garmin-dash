@@ -1,4 +1,4 @@
-.PHONY: setup lint test clean compose-dev compose-prod build-push auth ingest-sync ingest-backfill ingest-schedule report
+.PHONY: setup lint test clean lib-test lib-install-check compose-dev compose-prod build-push auth ingest-sync ingest-backfill ingest-schedule report
 
 # Python 3.12 virtual environment (using uv)
 VENV = .venv
@@ -31,6 +31,7 @@ help:
 setup:
 	$(UV) venv --clear $(VENV)
 	$(UV) pip install -e ".[dev]"
+	$(UV) pip install -e ./libs/signal_messenger
 	@echo "✅ Dependencies installed"
 
 lint:
@@ -39,6 +40,16 @@ lint:
 
 test:
 	$(UV) run pytest tests -v --tb=short
+
+lib-test:
+	@echo "🧪 signal_messenger (standalone)"
+	cd libs/signal_messenger && $(UV) run --with pytest pytest tests -v --tb=short
+
+lib-install-check:
+	@echo "📦 Standalone install check (scratch venv)"
+	$(UV) venv /tmp/signal-messenger-venv --clear -q
+	$(UV) pip install --python /tmp/signal-messenger-venv ./libs/signal_messenger
+	/tmp/signal-messenger-venv/bin/python -c "from signal_messenger import SignalRestClient; print('✅ standalone import OK')"
 
 clean:
 	rm -rf $(VENV) build dist *.egg-info .pytest_cache

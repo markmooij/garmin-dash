@@ -49,6 +49,7 @@ fi
 docker buildx build \
   --push \
   --platform "${PLATFORMS}" \
+  -f docker/Dockerfile \
   "${TAGS[@]}" \
   .
 

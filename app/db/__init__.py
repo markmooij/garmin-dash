@@ -86,9 +86,15 @@ def seed_default_user(session: Session) -> User:
 
 
 def init_db() -> None:
-    """Create all tables (used by tests / first-run bootstrap)."""
+    """Create all tables + default user (used by tests / first-run bootstrap)."""
     from . import models  # noqa: F401
 
     engine = _session_factory().bind
     if engine is not None:
         Base.metadata.create_all(bind=engine)
+    session = _session_factory()
+    try:
+        seed_default_user(session)
+        session.commit()
+    finally:
+        session.close()

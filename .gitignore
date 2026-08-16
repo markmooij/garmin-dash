@@ -16,6 +16,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # --- Garmin tokens / auth ---
 *.garmin*

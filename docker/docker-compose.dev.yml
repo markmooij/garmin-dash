@@ -1,36 +1,54 @@
-# Development Docker Compose (dev machine)
+# Development Docker Compose (dev machine, amd64)
 # Run: docker compose -f docker-compose.dev.yml up -d
+# Reads .env from this directory if present (optional in dev).
 
 services:
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      args:
-        REGISTRY: ghcr.io
-        APP_NAME: garmin-dash
-        SIGNAL_API_NAME: signal-messenger
+    restart: unless-stopped
     ports:
       - "${GARMINDASH_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DOCKER_PROFILE=dev
+      - DEBUG=true
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
-    environment:
-      - DEBUG=true
-      - DOCKER_PROFILE=dev
-      - GARMINTOKENS=${GARMINTOKENS}
-      - SIGNAL_CLI_API_URL=http://localhost:8080
-      - SIGNAL_CLI_TOKEN=${SIGNAL_CLI_TOKEN}
-      - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL}
-    depends_on:
-      - signal-api
+    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - garmin-dash
 
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    command: ["sh", "-c", "alembic upgrade head && exec gdash ingest schedule"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DOCKER_PROFILE=dev
+      - DEBUG=true
+      - SIGNAL_CLI_API_URL=http://signal-api:8080
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+    user: "${PUID:-1000}:${PGID:-1000}"
+    networks:
+      - garmin-dash
+
+  # Signal REST API (Phase 4 — only when provisioned):
+  #   docker compose -f docker-compose.dev.yml --profile signal up -d
   signal-api:
     image: bbernhard/signal-cli-rest-api:latest
+    profiles: ["signal"]
+    restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:

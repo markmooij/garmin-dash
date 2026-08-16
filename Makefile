@@ -1,4 +1,4 @@
-.PHONY: setup lint test clean lib-test lib-install-check compose-dev compose-prod build-push auth ingest-sync ingest-backfill ingest-schedule report
+.PHONY: setup lint test clean lib-test lib-install-check docker-login docker-build-push compose-dev compose-prod auth ingest-sync ingest-backfill ingest-schedule report
 
 # Python 3.12 virtual environment (using uv)
 VENV = .venv
@@ -6,6 +6,10 @@ UV = /home/mark/.local/bin/uv
 
 # Docker
 DOCKER = docker
+
+# Registry defaults (override on the command line)
+REGISTRY ?= ghcr.io
+TAG ?= latest
 
 # Default target
 .DEFAULT_GOAL := help
@@ -24,9 +28,10 @@ help:
 	@echo "  ingest-schedule  Run the background sync scheduler"
 	@echo "  report           CLI metrics report"
 	@echo ""
-	@echo "  compose-dev      Start dev containers (app + signal-api)"
-	@echo "  compose-prod     Start prod containers (RPi profile)"
-	@echo "  build-push       Build multi-arch images and push to GHCR"
+@echo "  compose-dev      Start dev containers (app + scheduler + signal-api profile)"
+	@echo "  compose-prod     Start prod containers (RPi, see DEPLOY.md)"
+	@echo "  docker-login     Login to the container registry (GHCR_USER/GHCR_TOKEN)"
+	@echo "  docker-build-push Build multi-arch image and push (APP_NAME=<gh-user>/garmin-dash)"
 
 setup:
 	$(UV) venv --clear $(VENV)
@@ -76,18 +81,18 @@ report:
 	@echo "📊 Metrics Report"
 	$(UV) run gdash report $(ARGS)
 
-# Docker
+# Docker (see DEPLOY.md for the full Pi deployment walkthrough)
+# Usage: make docker-login GHCR_USER=<user> GHCR_TOKEN=<PAT>
+docker-login:
+	@echo "🔑 Logging in to $(REGISTRY) as $(GHCR_USER)"
+	echo "$(GHCR_TOKEN)" | $(DOCKER) login $(REGISTRY) -u $(GHCR_USER) --password-stdin
+
+# Usage: make docker-build-push APP_NAME=<gh-user>/garmin-dash [TAG=v0.1.0]
+docker-build-push:
+	@cd docker && APP_NAME=$(APP_NAME) TAG=$(TAG) ./build-push.sh
+
 compose-dev:
 	$(DOCKER) compose -f docker/docker-compose.dev.yml up -d
 
 compose-prod:
 	$(DOCKER) compose -f docker/docker-compose.prod.yml up -d
-
-build-push:
-	$(DOCKER) buildx build --push \
-		--platform linux/amd64,linux/arm64 \
-		--build-arg REGISTRY=$(REGISTRY) \
-		--build-arg APP_NAME=$(APP_NAME) \
-		-t $(REGISTRY)/$(APP_NAME):latest \
-		-f docker/Dockerfile \
-		.

@@ -45,6 +45,23 @@ make compose-dev
 # Access dashboard at http://localhost:8000
 ```
 
+## Deployment (Raspberry Pi)
+
+See [DEPLOY.md](DEPLOY.md) for the full walkthrough: build a multi-arch image
+(amd64 + arm64) on your dev machine, push to a private registry (GHCR), and run
+`app` + `scheduler` containers on the Pi with `restart: unless-stopped`.
+
+```bash
+# dev machine — build & push (one command, repeatable)
+cd docker && APP_NAME=<your-github-user>/garmin-dash ./build-push.sh
+
+# Raspberry Pi — start (and it stays up)
+cd ~/garmin-dash
+# (copy docker-compose.prod.yml + .env.prod.example → .env + data/, see DEPLOY.md)
+docker compose -f docker-compose.prod.yml up -d
+curl http://localhost:8000/healthz   # → {"status":"ok"}
+```
+
 ## Architecture
 
 ```

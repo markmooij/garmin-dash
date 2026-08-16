@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 
 from ..db import get_session
 from . import query
@@ -23,6 +24,16 @@ templates = Jinja2Templates(directory="app/web/templates")
 def _db() -> Session:
     """Request-scoped DB session (no request needed)."""
     return get_session()
+
+
+@router.get("/healthz")
+def healthz(db: Session = Depends(_db)):  # noqa: B008
+    """Liveness/readiness probe for Docker healthcheck + uptime monitors."""
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"status": "error"}, status_code=503)
 
 
 # ── HTML views ─────────────────────────────────────────────────────────
@@ -111,11 +122,6 @@ def api_intraday(
         return JSONResponse(query.intraday_for(db, day))
     finally:
         db.close()
-
-
-@router.get("/healthz")
-def healthz():
-    return {"status": "ok"}
 
 
 def _today_local() -> date:

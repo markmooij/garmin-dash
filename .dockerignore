@@ -1,0 +1,26 @@
+# Build context hygiene: keep secrets, local data, and junk out of the image
+.git
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Secrets — never ship .env or credentials into the image
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Local data — health data, tokens, SQLite DB, logs
+data/
+logs/
+!libs/signal_messenger/tests/
+
+# Editor/OS noise
+.DS_Store
+*.swp

@@ -45,6 +45,16 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+    # Single-user app: ensure the default user exists on every boot
+    # (idempotent; the dashboard and sync_state FK to users.id=1).
+    from app.db import get_session, seed_default_user
+
+    session = get_session()
+    try:
+        seed_default_user(session)
+        session.commit()
+    finally:
+        session.close()
     engine.dispose()
 
 

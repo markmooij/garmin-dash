@@ -2,12 +2,14 @@
 
 Goal: run garmin-dash **indefinitely** on a Raspberry Pi inside your network,
 with a repeatable update loop. One dev machine builds images (amd64 + arm64),
-pushes them to a **private** container registry, and the Pi pulls + runs.
+pushes them to your private registry at **`ghcr.io/yourname`**, and the Pi
+pulls + runs. Push/pull access is already network/ACL-managed — no
+`docker login` step is required in the normal flow.
 
 ```
 ┌─────────────────────────┐          ┌──────────────────────────────┐
-│  Dev machine (x86)      │  push   │  Private registry (GHCR)     │
-│  docker buildx (multi-  │ ──────► │  ghcr.io/<you>/garmin-dash   │
+│  Dev machine (x86)      │  push   │  ghcr.io/yourname           │
+│  docker buildx (multi-  │ ──────► │  garmin-dash:latest           │
 │  arch amd64+arm64)      │         └──────────────┬───────────────┘
 └─────────────────────────┘                        │ pull
                                                    ▼
@@ -28,41 +30,33 @@ pushes them to a **private** container registry, and the Pi pulls + runs.
 
 Both survive reboots (`restart: unless-stopped`), write to the shared
 `./data` volume (SQLite DB + Garmin tokens), and `alembic upgrade head`
-runs at boot so a fresh volume self-initializes.
+runs at boot so a fresh volume self-initializes (schema + default user).
 
 ---
 
 ## 0. Prerequisites
 
-- **Dev machine**: Docker with buildx (`docker buildx version`), git.
+- **Dev machine**: Docker with buildx (`docker buildx version`), network
+  access to `ghcr.io/yourname` with push rights (already granted).
 - **Raspberry Pi**: Raspberry Pi OS (64-bit, Bookworm or newer) with Docker
-  Engine + Compose v2 (see step 5 for the install commands), reachable via
-  SSH from your dev machine, and a user account (uid 1000 = default `pi`).
-- **GitHub account** (for a private GHCR package) — or any OCI registry you
-  prefer (Harbor, registry:2, …) — adjust `REGISTRY`/`APP_NAME` accordingly.
+  Engine + Compose v2 (see step 4 for the install commands), reachable via
+  SSH from your dev machine, network access to `ghcr.io/yourname` with
+  pull rights (already granted).
 
 ---
 
-## 1. Dev machine — one-time registry login
+## 1. Dev machine — one-time setup
 
-Create a GitHub **Personal Access Token (classic)** with the `write:packages`
-scope (github.com → Settings → Developer settings → Personal access tokens),
-then:
-
-```bash
-export GHCR_USER=<your-github-username>
-echo <your-PAT> | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-# → Login Succeeded
-```
-
-Enable the cross-arch emulation once (needed for the arm64 build on x86):
+Enable cross-arch emulation once (needed for the arm64 build on x86):
 
 ```bash
 docker run --privileged --rm tonistiigi/binfmt --install all
 ```
 
-Verify: `docker buildx ls` should show a builder; the script creates
-`garmin-builder` (docker-container driver) automatically on first run.
+That's it — no registry login needed since `ghcr.io/yourname` access is
+already managed. `docker buildx ls` should show a builder; the script
+creates one (`garmin-builder`, docker-container driver) automatically on
+first run.
 
 ## 2. Dev machine — build & push (repeatable)
 
@@ -70,32 +64,29 @@ From the repo root:
 
 ```bash
 cd docker
-APP_NAME=<your-github-username>/garmin-dash ./build-push.sh
+./build-push.sh
 ```
 
 What it does:
 
 1. switches to repo root (build context),
-2. creates/reuses a `docker-container` buildx builder,
-3. logs in to GHCR if `GHCR_USER`/`GHCR_TOKEN` are set (or use step 1),
-4. builds `linux/amd64,linux/arm64` and pushes:
+2. creates/reuses a `docker-container` buildx builder (required for
+   multi-arch `--push`),
+3. builds `linux/amd64,linux/arm64` and pushes:
 
 ```
-ghcr.io/<you>/garmin-dash:latest
-ghcr.io/<you>/garmin-dash:v0.1.0   (when TAG=v0.1.0)
+ghcr.io/yourname/garmin-dash:latest
 ```
 
 Version tags are optional but recommended for rollbacks:
 
 ```bash
-APP_NAME=<your-github-user>/garmin-dash TAG=v0.1.0 ./build-push.sh
+TAG=v0.1.0 ./build-push.sh
+# → pushes both ghcr.io/yourname/garmin-dash:latest and :v0.1.0
 ```
 
 First build takes a while (pip installs for both architectures). Later
 builds are fast thanks to layer caching.
-
-> **Private by default:** packages under `ghcr.io/<you>/` are private.
-> The Pi must be logged in to pull them (step 6).
 
 ## 3. Dev machine — prepare the Pi's files
 
@@ -128,6 +119,7 @@ nano .env
 | Setting | Value / note |
 |---------|--------------|
 | `GARMINDASH_PORT` | host port for the dashboard (default `8000`) |
+| `GARMINDASH_IMAGE` | optional — pin a version tag, e.g. `ghcr.io/yourname/garmin-dash:v0.1.0` (defaults to `:latest`) |
 | `PUID` / `PGID` | your Pi user's ids (`id -u` / `id -g`, usually 1000/1000) — the containers run as this user so `./data` stays writable |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | optional (only for re-auth) |
 | `GARMINTOKENS` | keep `data/garmin/tokens` (container-relative; maps to the mounted volume) |
@@ -151,16 +143,16 @@ newgrp docker        # or log out/in
 docker compose version   # → Docker Compose version v2.x
 ```
 
-## 6. Pi — login to the private registry & pull
+## 6. Pi — pull
 
 ```bash
 cd ~/garmin-dash
-echo <your-PAT> | docker login ghcr.io -u <your-github-username> --password-stdin
 docker compose -f docker-compose.prod.yml pull
 ```
 
-(Pull once now; updates use `docker compose up -d` which pulls changed
-images automatically.)
+No login needed — pull access to `ghcr.io/yourname` is already granted on
+the Pi's network. If your registry ever requires auth, see the
+troubleshooting table below.
 
 ## 7. Pi — start (and keep running)
 
@@ -196,20 +188,21 @@ Both containers restart automatically after a reboot or crash.
 ```bash
 # ── dev machine ──────────────────────────────────────────────────────
 cd ~/Projects/garmin-dash/docker
-APP_NAME=<your-github-user>/garmin-dash ./build-push.sh     # build+push (or TAG=vX.Y.Z)
+./build-push.sh                        # build+push :latest (or TAG=vX.Y.Z)
 
 # ── Pi ──────────────────────────────────────────────────────────────
 ssh pi@<pi-ip>
 cd ~/garmin-dash
-docker compose -f docker-compose.prod.yml up -d   # pulls new image, restarts changed services
-docker compose -f docker-compose.prod.yml ps      # check healthy
+docker compose -f docker-compose.prod.yml pull   # fetch the new image
+docker compose -f docker-compose.prod.yml up -d  # restart changed services
+docker compose -f docker-compose.prod.yml ps     # check healthy
 ```
 
 Rollback (when you used version tags):
 
 ```bash
-# Pi: pin the previous tag and restart
-sed -i 's#garmin-dash:latest#garmin-dash:v0.1.0#' docker-compose.prod.yml
+# Pi: pin the previous tag via .env, then restart
+echo "GARMINDASH_IMAGE=ghcr.io/yourname/garmin-dash:v0.1.0" >> .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -232,7 +225,7 @@ is a good idea.)
 
 | Symptom | Fix |
 |---------|-----|
-| `docker pull` on Pi fails auth | Pi not logged in to ghcr.io (step 6); or PAT lacks `read:packages` |
+| `docker pull` on Pi fails auth | Registry access changed / not yet granted on this host — confirm with your registry admin, or set `REGISTRY_USER`/`REGISTRY_TOKEN` env vars and `docker login ghcr.io/yourname` manually |
 | Build fails on arm64 | binfmt emulation not installed (step 1); run the binfmt container again after a reboot of the dev machine |
 | `data/... permission denied` | `PUID`/`PGID` don't match your Pi user; check `id -u` and fix `.env`, then `docker compose up -d` again |
 | Dashboard 500s on first load | schema not applied — check `docker compose logs app`; normally `alembic upgrade head` at boot does this automatically |

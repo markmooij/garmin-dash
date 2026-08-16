@@ -1,4 +1,4 @@
-.PHONY: setup lint test clean lib-test lib-install-check docker-login docker-build-push compose-dev compose-prod auth ingest-sync ingest-backfill ingest-schedule report
+.PHONY: setup lint test clean lib-test lib-install-check docker-build-push compose-dev compose-prod auth ingest-sync ingest-backfill ingest-schedule report
 
 # Python 3.12 virtual environment (using uv)
 VENV = .venv
@@ -8,7 +8,8 @@ UV = /home/mark/.local/bin/uv
 DOCKER = docker
 
 # Registry defaults (override on the command line)
-REGISTRY ?= ghcr.io
+REGISTRY ?= ghcr.io/yourname
+APP_NAME ?= garmin-dash
 TAG ?= latest
 
 # Default target
@@ -28,10 +29,9 @@ help:
 	@echo "  ingest-schedule  Run the background sync scheduler"
 	@echo "  report           CLI metrics report"
 	@echo ""
-@echo "  compose-dev      Start dev containers (app + scheduler + signal-api profile)"
+	@echo "  compose-dev      Start dev containers (app + scheduler + signal-api profile)"
 	@echo "  compose-prod     Start prod containers (RPi, see DEPLOY.md)"
-	@echo "  docker-login     Login to the container registry (GHCR_USER/GHCR_TOKEN)"
-	@echo "  docker-build-push Build multi-arch image and push (APP_NAME=<gh-user>/garmin-dash)"
+	@echo "  docker-build-push Build multi-arch image and push to ghcr.io/yourname (no login needed)"
 
 setup:
 	$(UV) venv --clear $(VENV)
@@ -82,14 +82,11 @@ report:
 	$(UV) run gdash report $(ARGS)
 
 # Docker (see DEPLOY.md for the full Pi deployment walkthrough)
-# Usage: make docker-login GHCR_USER=<user> GHCR_TOKEN=<PAT>
-docker-login:
-	@echo "🔑 Logging in to $(REGISTRY) as $(GHCR_USER)"
-	echo "$(GHCR_TOKEN)" | $(DOCKER) login $(REGISTRY) -u $(GHCR_USER) --password-stdin
-
-# Usage: make docker-build-push APP_NAME=<gh-user>/garmin-dash [TAG=v0.1.0]
+# Push access to ghcr.io/yourname is already managed — no login needed.
+# Only set REGISTRY_USER/REGISTRY_TOKEN if that ever changes.
+# Usage: make docker-build-push [TAG=v0.1.0]
 docker-build-push:
-	@cd docker && APP_NAME=$(APP_NAME) TAG=$(TAG) ./build-push.sh
+	@cd docker && REGISTRY=$(REGISTRY) APP_NAME=$(APP_NAME) TAG=$(TAG) ./build-push.sh
 
 compose-dev:
 	$(DOCKER) compose -f docker/docker-compose.dev.yml up -d

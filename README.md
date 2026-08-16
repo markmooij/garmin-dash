@@ -48,12 +48,13 @@ make compose-dev
 ## Deployment (Raspberry Pi)
 
 See [DEPLOY.md](DEPLOY.md) for the full walkthrough: build a multi-arch image
-(amd64 + arm64) on your dev machine, push to a private registry (GHCR), and run
-`app` + `scheduler` containers on the Pi with `restart: unless-stopped`.
+(amd64 + arm64) on your dev machine, push to the private registry
+(`ghcr.io/yourname`), and run `app` + `scheduler` containers on the Pi
+with `restart: unless-stopped`.
 
 ```bash
-# dev machine — build & push (one command, repeatable)
-cd docker && APP_NAME=<your-github-user>/garmin-dash ./build-push.sh
+# dev machine — build & push (one command, repeatable, no login needed)
+cd docker && ./build-push.sh
 
 # Raspberry Pi — start (and it stays up)
 cd ~/garmin-dash

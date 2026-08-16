@@ -6,7 +6,7 @@
 
 services:
   app:
-    image: ghcr.io/<your-github-user>/garmin-dash:latest
+    image: ${GARMINDASH_IMAGE:-ghcr.io/yourname/garmin-dash:latest}
     platform: linux/arm64
     restart: unless-stopped
     ports:
@@ -27,7 +27,7 @@ services:
   # Background ingestion: incremental sync every SYNC_INTERVAL_MINUTES,
   # morning Signal report + command polling (Phase 4, gated by SIGNAL_ENABLED).
   scheduler:
-    image: ghcr.io/<your-github-user>/garmin-dash:latest
+    image: ${GARMINDASH_IMAGE:-ghcr.io/yourname/garmin-dash:latest}
     platform: linux/arm64
     restart: unless-stopped
     command: ["sh", "-c", "alembic upgrade head && exec gdash ingest schedule"]

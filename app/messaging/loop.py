@@ -68,11 +68,14 @@ def poll_commands() -> None:
     except Exception:  # noqa: BLE001
         logger.exception("Signal receive failed")
         return
+    if messages:
+        logger.info("Received %d message(s) from Signal", len(messages))
     for msg in messages:
         if allowed and msg.sender != allowed:
             logger.info("Ignoring message from unknown sender %s", msg.sender)
             continue
         if not msg.text.startswith("/"):
+            logger.info("Ignoring non-command message: %r", msg.text[:60])
             continue
         with session_scope() as session:
             reply = route_command(session, msg.text)

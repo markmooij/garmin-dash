@@ -145,6 +145,8 @@ class SignalRestClient(Messenger):
                     text = sent.get("message")
                     ts_raw = sent.get("timestamp")
                     sender = self.account  # "Note to Self" — route as a command from you
+                elif sync:
+                    logger.info("Ignoring sync envelope (not self-chat): destination=%s", destination)
 
             if not text:
                 continue

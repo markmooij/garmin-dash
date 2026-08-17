@@ -183,6 +183,53 @@ def test_receive_messages_single_object_without_envelope_is_empty():
     assert c.receive_messages() == []
 
 
+def test_receive_messages_real_captured_payload():
+    """Exact payload captured from signal-cli-rest-api:latest (v0.100) on the
+    Pi for a Note-to-Self '/summary' — list with {envelope, account} entries,
+    syncMessage.sentMessage nested inside the envelope."""
+    payload = [
+        {
+            "envelope": {
+                "source": "+31600000000",
+                "sourceNumber": "+31600000000",
+                "sourceUuid": "11111111-2222-3333-4444-555555555555",
+                "sourceName": "Mark Mooij",
+                "sourceDevice": 2,
+                "timestamp": 1786997164918,
+                "serverReceivedTimestamp": 1786997165130,
+                "serverDeliveredTimestamp": 1786997166942,
+                "syncMessage": {
+                    "sentMessage": {
+                        "destination": "+31600000000",
+                        "destinationNumber": "+31600000000",
+                        "destinationUuid": "11111111-2222-3333-4444-555555555555",
+                        "timestamp": 1786997164918,
+                        "message": "/summary",
+                        "expiresInSeconds": 0,
+                        "isExpirationUpdate": False,
+                        "viewOnce": False,
+                    }
+                },
+            },
+            "account": "+31600000000",
+        }
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    c = SignalRestClient(
+        base_url="http://signal.local:8080",
+        account="+31600000000",
+        client=httpx.Client(transport=transport),
+    )
+    msgs = c.receive_messages(timeout=5)
+    assert msgs == [
+        Message(sender="+31600000000", text="/summary", timestamp=1786997164, raw=payload[0])
+    ]
+
+
 def test_receive_messages_uses_request_timeout_larger_than_long_poll():
     """The HTTP read timeout must exceed the API long-poll window, else the
     client cuts the request while the API still holds it (ReadTimeout)."""

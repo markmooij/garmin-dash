@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import create_engine
@@ -23,6 +24,11 @@ def _db_url() -> str:
     return f"sqlite:///{get_settings().DB_PATH}"
 
 
+def _ensure_db_dir() -> None:
+    """Create the DB parent dir if missing (SQLite cannot create parents)."""
+    Path(get_settings().DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=_db_url(),
@@ -36,6 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    _ensure_db_dir()
     engine = create_engine(_db_url())
     with engine.connect() as connection:
         context.configure(

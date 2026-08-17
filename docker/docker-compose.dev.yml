@@ -16,10 +16,11 @@ services:
     environment:
       - DOCKER_PROFILE=dev
       - DEBUG=true
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
-    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - garmin-dash
 
@@ -35,11 +36,12 @@ services:
     environment:
       - DOCKER_PROFILE=dev
       - DEBUG=true
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - SIGNAL_CLI_API_URL=http://signal-api:8080
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
-    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - garmin-dash
 

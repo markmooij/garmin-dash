@@ -120,7 +120,7 @@ nano .env
 |---------|--------------|
 | `GARMINDASH_PORT` | host port for the dashboard (default `8000`) |
 | `GARMINDASH_IMAGE` | optional — pin a version tag, e.g. `ghcr.io/yourname/garmin-dash:v0.1.0` (defaults to `:latest`) |
-| `PUID` / `PGID` | your Pi user's ids (`id -u` / `id -g`, usually 1000/1000) — the containers run as this user so `./data` stays writable |
+| `PUID` / `PGID` | your Pi user's ids (`id -u` / `id -g`, usually 1000/1000) — the containers run as this user; the entrypoint chowns `./data` + `./logs` to it at every boot, so fresh installs work even if Docker created those dirs as root |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | optional (only for re-auth) |
 | `GARMINTOKENS` | keep `data/garmin/tokens` (container-relative; maps to the mounted volume) |
 | `TIMEZONE` | keep `Europe/Amsterdam` (or your zone) |
@@ -225,6 +225,7 @@ is a good idea.)
 
 | Symptom | Fix |
 |---------|-----|
+| `sqlite3.OperationalError: unable to open database file` at boot (both containers) | The `data/` dir on the Pi is not writable by the container uid (classic: Docker auto-created `./data` as root before you ever wrote into it). The image now auto-fixes this: the entrypoint chowns `./data` + `./logs` to `PUID:PGID` at every start. For an **already-running** broken stack: `sudo chown -R 1000:1000 data logs` (match your `PUID`/`PGID`), then `docker compose up -d` again — and make sure you pulled the latest image |
 | `docker pull` on Pi fails auth | Registry access changed / not yet granted on this host — confirm with your registry admin, or set `REGISTRY_USER`/`REGISTRY_TOKEN` env vars and `docker login ghcr.io/yourname` manually |
 | Build fails on arm64 | binfmt emulation not installed (step 1); run the binfmt container again after a reboot of the dev machine |
 | `data/... permission denied` | `PUID`/`PGID` don't match your Pi user; check `id -u` and fix `.env`, then `docker compose up -d` again |

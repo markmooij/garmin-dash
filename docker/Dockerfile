@@ -19,6 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create non-root user
 RUN groupadd -r garmin && useradd -r -g garmin garmin
 
+# Entrypoint: fixes bind-mount ownership (PUID/PGID), then drops privileges
+COPY docker/entrypoint.sh /usr/local/bin/gdash-entrypoint
+RUN chmod +x /usr/local/bin/gdash-entrypoint
+ENTRYPOINT ["/usr/local/bin/gdash-entrypoint"]
+
 # Set working directory
 WORKDIR /app
 
@@ -47,11 +52,8 @@ COPY alembic/ ./alembic/
 COPY app/ ./app/
 COPY tests/ ./tests/
 
-# Set ownership
+# Set ownership (the entrypoint drops to PUID/PGID at runtime)
 RUN chown -R garmin:garmin /app
-
-# Switch to non-root user
-USER garmin
 
 # Health check (PORT-aware; /healthz added for container probes)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

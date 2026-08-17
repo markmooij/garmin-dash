@@ -17,10 +17,11 @@ services:
       - DOCKER_PROFILE=prod
       - DEBUG=false
       - TZ=${TZ:-Europe/Amsterdam}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - garmin-dash
 
@@ -37,13 +38,14 @@ services:
       - DOCKER_PROFILE=prod
       - DEBUG=false
       - TZ=${TZ:-Europe/Amsterdam}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Signal API reachable by compose service name (used only when
       # the signal profile is active and SIGNAL_ENABLED=true)
       - SIGNAL_CLI_API_URL=http://signal-api:8080
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - garmin-dash
 

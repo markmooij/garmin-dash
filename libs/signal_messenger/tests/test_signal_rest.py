@@ -121,6 +121,28 @@ def test_receive_messages_parses_note_to_self():
     ]
 
 
+def test_receive_messages_uses_request_timeout_larger_than_long_poll():
+    """The HTTP read timeout must exceed the API long-poll window, else the
+    client cuts the request while the API still holds it (ReadTimeout)."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["read_timeout"] = request.extensions["timeout"]["read"]
+        return httpx.Response(200, json=[])
+
+    c, _ = _client(handler)
+    c.receive_messages(timeout=1)  # 1s long-poll -> 30s floor
+    assert seen["read_timeout"] == 30.0
+    c.receive_messages(timeout=60)  # long polls -> window + 15s margin
+    assert seen["read_timeout"] == 75.0
+
+
+def test_receive_messages_handles_204():
+    """The API may answer a timed-out long-poll with 204 — treat as empty."""
+    c, _ = _client(lambda r: httpx.Response(204))
+    assert c.receive_messages() == []
+
+
 def test_receive_requires_account():
     c, _ = _client(lambda r: httpx.Response(200, json=[]))
     c.account = None

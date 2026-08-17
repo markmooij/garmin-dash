@@ -53,8 +53,15 @@ class SignalRestClient(Messenger):
         resp.raise_for_status()
         return resp
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
-        resp = self._client.get(f"{self.base_url}{path}", params=params, headers=self._headers())
+    def _get(
+        self, path: str, params: dict[str, Any] | None = None, request_timeout: float | None = None
+    ) -> httpx.Response:
+        resp = self._client.get(
+            f"{self.base_url}{path}",
+            params=params,
+            headers=self._headers(),
+            timeout=request_timeout,
+        )
         resp.raise_for_status()
         return resp
 
@@ -92,7 +99,17 @@ class SignalRestClient(Messenger):
         """
         if not self.account:
             raise ValueError("SignalRestClient.receive_messages needs `account` (the registered number)")
-        resp = self._get(f"/v1/receive/{self.account}", params={"timeout": timeout})
+        # /v1/receive long-polls for up to `timeout` seconds — the HTTP read
+        # timeout must be larger than the long-poll window, or the client cuts
+        # the request while the API is still holding it (ReadTimeout right
+        # after linking, during signal-cli's initial sync).
+        resp = self._get(
+            f"/v1/receive/{self.account}",
+            params={"timeout": timeout},
+            request_timeout=max(timeout + 15, 30.0),
+        )
+        if resp.status_code == 204:
+            return []
         messages: list[Message] = []
         for entry in resp.json() or []:
             if not isinstance(entry, dict):

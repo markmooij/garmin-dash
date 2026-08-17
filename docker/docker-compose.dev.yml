@@ -29,7 +29,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    command: ["sh", "-c", "alembic upgrade head && exec gdash ingest schedule"]
+    command: ["sh", "-c", "gdash-migrate && exec gdash ingest schedule"]
     env_file:
       - path: .env
         required: false

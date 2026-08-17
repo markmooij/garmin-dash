@@ -24,6 +24,10 @@ COPY docker/entrypoint.sh /usr/local/bin/gdash-entrypoint
 RUN chmod +x /usr/local/bin/gdash-entrypoint
 ENTRYPOINT ["/usr/local/bin/gdash-entrypoint"]
 
+# Locked migration runner (shared-volume flock for app+scheduler)
+COPY docker/migrate.sh /usr/local/bin/gdash-migrate
+RUN chmod +x /usr/local/bin/gdash-migrate
+
 # Set working directory
 WORKDIR /app
 
@@ -63,4 +67,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 EXPOSE 8000
 
 # Run the application (PORT overridable via env; schema bootstrapped first)
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "gdash-migrate && exec uvicorn app.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

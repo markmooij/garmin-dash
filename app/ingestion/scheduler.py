@@ -2,8 +2,9 @@
 
 Invoked via `gdash ingest schedule` or as a long-running process in the
 container. Polls Garmin every SYNC_INTERVAL_MINUTES (default 15, jittered
-±2 min) and syncs the last SYNC_DAYS_BACK days each pass (catch-up window
-for late-arriving sleep data).
+±2 min), syncs the last SYNC_DAYS_BACK days each pass (catch-up window
+for late-arriving sleep data), then recomputes materialized scores so the
+dashboard never shows empty recovery/strain graphs.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ def _handle_stop(signum, frame):  # noqa: ARG001
 
 
 def run_sync_pass() -> None:
-    """One scheduled pass: incremental sync of the catch-up window."""
+    """One scheduled pass: incremental sync + score recompute."""
     settings = get_settings()
     days_back = int(settings.SYNC_DAYS_BACK) if settings.SYNC_DAYS_BACK else 3
     try:
@@ -54,6 +55,23 @@ def run_sync_pass() -> None:
         logger.info("Sync pass complete")
     except Exception:  # noqa: BLE001
         logger.exception("Sync pass failed — will retry on next interval")
+        return
+    # Materialize scores so the dashboard never shows empty graphs. The web
+    # layer only reads computed_scores — sync alone leaves recovery/strain
+    # empty. Recompute the trailing window (≥92d covers the 90-day strain
+    # calibration + 60-day recovery baseline; grows with SYNC_DAYS_BACK so
+    # the first pass backfills the whole synced history). Idempotent.
+    try:
+        from ..metrics.compute import compute_recent
+
+        window = max(days_back, 92)
+        results = compute_recent(days=window)
+        logger.info("Computed %d days of scores", len(results))
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Score recompute failed — dashboard may show empty graphs; "
+            "run 'gdash metrics compute' manually"
+        )
 
 
 def run_morning_report_job() -> None:

@@ -82,7 +82,11 @@ def test_receive_messages_skips_sync_and_empty_envelopes():
         return httpx.Response(
             200,
             json=[
-                {"envelope": {"source": "+1", "timestamp": 1}, "syncMessage": {"sentMessage": {}}},
+                # sync echo of a message *I sent to someone else* -> ignored
+                {
+                    "envelope": {"source": "+31612345678", "timestamp": 1},
+                    "syncMessage": {"sentMessage": {"destination": "+9999999", "message": "hi there"}},
+                },
                 {"envelope": {"source": "+2", "timestamp": 2}},  # typing indicator / receipt
                 {"envelope": {"source": "+3", "timestamp": 3}, "dataMessage": {"message": "hi"}},
                 {"envelope": {"source": "+4", "timestamp": 4}, "dataMessage": {"message": ""}},
@@ -92,6 +96,29 @@ def test_receive_messages_skips_sync_and_empty_envelopes():
     c, _ = _client(handler)
     msgs = c.receive_messages()
     assert [m.sender for m in msgs] == ["+3"]
+
+
+def test_receive_messages_parses_note_to_self():
+    """'Note to Self' arrives as syncMessage.sentMessage with destination == own account."""
+    envelope = {
+        "envelope": {"source": "+31612345678", "sourceUuid": "deadbeef", "timestamp": 1786000000000},
+        "syncMessage": {
+            "sentMessage": {
+                "destination": "+31612345678",
+                "timestamp": 1786000000000,
+                "message": "/summary",
+            }
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[envelope])
+
+    c, _ = _client(handler)
+    msgs = c.receive_messages(timeout=5)
+    assert msgs == [
+        Message(sender="+31612345678", text="/summary", timestamp=1786000000, raw=envelope)
+    ]
 
 
 def test_receive_requires_account():

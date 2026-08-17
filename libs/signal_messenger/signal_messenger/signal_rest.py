@@ -79,7 +79,17 @@ class SignalRestClient(Messenger):
         return body.get("id") if isinstance(body, dict) else None
 
     def receive_messages(self, timeout: int = 10) -> list[Message]:
-        """Poll for incoming messages (consuming). Requires `account`."""
+        """Poll for incoming messages (consuming). Requires `account`.
+
+        Handles two envelope shapes:
+
+        * ``dataMessage`` — a normal message from another number.
+        * ``syncMessage.sentMessage`` — what "Note to Self" produces (Signal
+          delivers self-chat as a sync of your own linked devices, not a
+          dataMessage). Treated as incoming *only* when its destination is
+          your own account (self-chat) — sync echoes of messages you sent to
+          *other* people are still ignored, so replying never loops.
+        """
         if not self.account:
             raise ValueError("SignalRestClient.receive_messages needs `account` (the registered number)")
         resp = self._get(f"/v1/receive/{self.account}", params={"timeout": timeout})
@@ -88,12 +98,25 @@ class SignalRestClient(Messenger):
             if not isinstance(entry, dict):
                 continue
             envelope = entry.get("envelope") or {}
-            data = entry.get("dataMessage") or {}
             sender = envelope.get("source") or envelope.get("sourceUuid") or "unknown"
+
+            data = entry.get("dataMessage") or {}
             text = data.get("message")
-            ts = int(data.get("timestamp") or envelope.get("timestamp") or 0) // 1000
-            if text:
-                messages.append(Message(sender=sender, text=str(text), timestamp=ts, raw=entry))
+            ts_raw = data.get("timestamp")
+
+            if not text:
+                sent = ((entry.get("syncMessage") or {}).get("sentMessage")) or {}
+                destination = sent.get("destination") or sent.get("destinationUuid")
+                is_self_chat = destination is not None and destination in (self.account, sender)
+                if is_self_chat:
+                    text = sent.get("message")
+                    ts_raw = sent.get("timestamp")
+                    sender = self.account  # "Note to Self" — route as a command from you
+
+            if not text:
+                continue
+            ts = int(ts_raw or envelope.get("timestamp") or 0) // 1000
+            messages.append(Message(sender=sender, text=str(text), timestamp=ts, raw=entry))
         return messages
 
     def health(self) -> bool:

@@ -121,6 +121,68 @@ def test_receive_messages_parses_note_to_self():
     ]
 
 
+def test_receive_messages_parses_single_object_response():
+    """signal-cli-rest-api >= 0.100 returns one message per call as a single
+    object {"account": ..., "envelope": ...}, not an array — parsing a dict
+    as a list would silently drop every message."""
+    envelope = {
+        "account": "+31612345678",
+        "envelope": {
+            "source": "+31699999999",
+            "sourceUuid": "beef",
+            "timestamp": 1786000000000,
+            "dataMessage": {"timestamp": 1786000000000, "message": "/summary"},
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=envelope)
+
+    c, _ = _client(handler)
+    msgs = c.receive_messages(timeout=5)
+    assert msgs == [
+        Message(sender="+31699999999", text="/summary", timestamp=1786000000, raw=envelope)
+    ]
+
+
+def test_receive_messages_single_object_note_to_self():
+    """Same single-object shape, but with a Note-to-Self sync envelope."""
+    envelope = {
+        "account": "+31612345678",
+        "envelope": {
+            "source": "+31612345678",
+            "sourceUuid": "deadbeef",
+            "timestamp": 1786000000000,
+            "syncMessage": {
+                "sentMessage": {
+                    "destination": "+31612345678",
+                    "timestamp": 1786000000000,
+                    "message": "/recovery",
+                }
+            },
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=envelope)
+
+    c, _ = _client(handler)
+    msgs = c.receive_messages(timeout=5)
+    assert msgs == [
+        Message(sender="+31612345678", text="/recovery", timestamp=1786000000, raw=envelope)
+    ]
+
+
+def test_receive_messages_single_object_without_envelope_is_empty():
+    """The API answers an empty long-poll with a message object lacking an
+    envelope (or an empty list) — both must yield no messages."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"account": "+31612345678"})
+
+    c, _ = _client(handler)
+    assert c.receive_messages() == []
+
+
 def test_receive_messages_uses_request_timeout_larger_than_long_poll():
     """The HTTP read timeout must exceed the API long-poll window, else the
     client cuts the request while the API still holds it (ReadTimeout)."""

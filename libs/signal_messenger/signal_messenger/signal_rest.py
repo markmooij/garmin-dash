@@ -82,8 +82,11 @@ class SignalRestClient(Messenger):
             body = resp.json()
         except ValueError:
             return None
-        # v2/send responds 201 with {"id": ..., "timestamp": ...}
-        return body.get("id") if isinstance(body, dict) else None
+        # v2/send responds 201 with {"timestamp": "..."} (newer API) or
+        # {"id": ..., "timestamp": ...} (older API)
+        if isinstance(body, dict):
+            return body.get("id") or body.get("timestamp")
+        return None
 
     def receive_messages(self, timeout: int = 10) -> list[Message]:
         """Poll for incoming messages (consuming). Requires `account`.
@@ -110,19 +113,32 @@ class SignalRestClient(Messenger):
         )
         if resp.status_code == 204:
             return []
+        payload = resp.json()
+        if isinstance(payload, dict):
+            # signal-cli-rest-api >= 0.100 (Go rewrite) returns ONE message
+            # per call as {"account": ..., "envelope": {...}} — not an array.
+            entries = [payload] if payload.get("envelope") else []
+        elif isinstance(payload, list):
+            entries = payload
+        else:
+            entries = []
         messages: list[Message] = []
-        for entry in resp.json() or []:
+        for entry in entries:
             if not isinstance(entry, dict):
                 continue
             envelope = entry.get("envelope") or {}
             sender = envelope.get("source") or envelope.get("sourceUuid") or "unknown"
 
-            data = entry.get("dataMessage") or {}
+            # Message content is either a sibling of "envelope" (signal-cli
+            # JSON passthrough in the older API) or nested INSIDE the
+            # envelope (>= 0.100 Go API: {"account", "envelope": {...}}).
+            data = entry.get("dataMessage") or envelope.get("dataMessage") or {}
             text = data.get("message")
             ts_raw = data.get("timestamp")
 
             if not text:
-                sent = ((entry.get("syncMessage") or {}).get("sentMessage")) or {}
+                sync = entry.get("syncMessage") or envelope.get("syncMessage") or {}
+                sent = sync.get("sentMessage") or {}
                 destination = sent.get("destination") or sent.get("destinationUuid")
                 is_self_chat = destination is not None and destination in (self.account, sender)
                 if is_self_chat:

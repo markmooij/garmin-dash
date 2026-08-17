@@ -62,3 +62,38 @@ def test_sync_pass_computes_scores(sched_session, monkeypatch):
     assert rows, "sync pass must materialize at least one score row"
     assert any(r.score_date == date(2026, 8, 9) for r in rows)
     assert any(r.strain is not None for r in rows)
+
+
+def test_schedule_runs_first_sync_as_background_job(monkeypatch):
+    """Startup must not block on the first sync pass: the sync is scheduled
+    with next_run_time (background job) so Signal polling runs immediately,
+    even while a long 365-day backfill is in progress."""
+    calls: list[dict] = []
+
+    class FakeScheduler:
+        def __init__(self, timezone=None):
+            self.timezone = timezone
+
+        def add_job(self, fn, trigger=None, id=None, **kw):  # noqa: ARG002
+            calls.append({"id": id, **kw})
+
+        def start(self):
+            pass
+
+    class FakeSettings:
+        TIMEZONE = "Europe/Amsterdam"
+        SYNC_INTERVAL_MINUTES = 15
+        SYNC_DAYS_BACK = 365
+        SIGNAL_ENABLED = False
+
+    monkeypatch.setattr(scheduler, "BlockingScheduler", FakeScheduler)
+    monkeypatch.setattr(scheduler, "get_settings", lambda: FakeSettings())
+    sync_spy = []
+    monkeypatch.setattr(scheduler, "run_sync_pass", lambda: sync_spy.append(1))
+
+    scheduler.schedule()
+
+    sync_job = next(c for c in calls if c["id"] == "garmin-sync")
+    assert sync_job["next_run_time"] is not None, "first sync must run as a scheduled job"
+    assert sync_job["max_instances"] == 1
+    assert not sync_spy, "sync must not run synchronously before scheduler.start()"

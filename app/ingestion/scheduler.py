@@ -12,6 +12,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import signal
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -105,6 +107,15 @@ def schedule() -> None:
 
     scheduler = BlockingScheduler(timezone=get_settings().TIMEZONE)
     _scheduler_ref.append(scheduler)
+    # First pass runs immediately as a background job (next_run_time), NOT
+    # synchronously before scheduler.start(): a big first sync (e.g.
+    # SYNC_DAYS_BACK=365) would otherwise block startup for many minutes and
+    # the Signal poll/morning-report jobs would not run during that time.
+    try:
+        tzinfo = ZoneInfo(settings.TIMEZONE)
+    except Exception:  # noqa: BLE001 - invalid tz name; fall back to local
+        tzinfo = None
+    next_run = datetime.now(tzinfo) if tzinfo else datetime.now().astimezone()
     scheduler.add_job(
         run_sync_pass,
         trigger=IntervalTrigger(minutes=interval_min, jitter=120),
@@ -112,6 +123,7 @@ def schedule() -> None:
         replace_existing=True,
         coalesce=True,
         max_instances=1,
+        next_run_time=next_run,
     )
 
     if settings.SIGNAL_ENABLED:
@@ -147,8 +159,6 @@ def schedule() -> None:
         interval_min,
         days_back,
     )
-    # Run once immediately so the container has data without waiting 15 min
-    run_sync_pass()
 
     try:
         scheduler.start()

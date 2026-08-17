@@ -269,7 +269,7 @@ confirmed; CHANGELOG; docs for the signal_messenger package.
   `registry:2`/Harbor if preferred.
 - **Signal number**: decide SIM-vs-secondary-device-linking before Phase 4 setup.
   *Recommendation: QR secondary-device link* — no extra SIM/costs; provisioning is a
-  one-time scan of `/v1/qrcodes` (see `libs/signal_messenger/README.md`); caveat: the
+  one-time scan of `/v1/qrcodelink` (see `libs/signal_messenger/README.md`); caveat: the
   phone's Signal app must keep running. The SIM route needs a spare SIM + SMS code.
 - **LLM endpoint**: confirm it speaks the OpenAI chat-completions contract (vLLM, llama.cpp
   server, or a proxy all do).

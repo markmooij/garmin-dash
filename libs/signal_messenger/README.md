@@ -51,7 +51,7 @@ to the phone; signal-cli acts as a *linked device*).
 ```bash
 # 1. start the container (see docker-compose.{dev,prod}.yml)
 # 2. fetch the QR code — scan it inside Signal: Settings → Linked devices
-curl "http://localhost:8080/v1/qrcodes?device_name=garmin-dash" -o qr.png
+curl "http://localhost:8080/v1/qrcodelink?device_name=garmin-dash" -o qr.png
 # 3. check it is linked
 curl http://localhost:8080/v1/health
 ```

@@ -50,6 +50,10 @@ class SignalRestClient(Messenger):
 
     def _post(self, path: str, payload: dict[str, Any]) -> httpx.Response:
         resp = self._client.post(f"{self.base_url}{path}", json=payload, headers=self._headers())
+        if resp.status_code >= 400:
+            # the API explains itself in the body ({"error": "..."}) — without
+            # this, a 400 gives no clue which field it rejected
+            logger.error("POST %s failed: %s %s", path, resp.status_code, resp.text[:300])
         resp.raise_for_status()
         return resp
 
@@ -68,16 +72,20 @@ class SignalRestClient(Messenger):
     # -- Messenger --------------------------------------------------------
 
     def send_message(self, recipient: str, text: str) -> str | None:
-        """Send `text` to a single recipient (E.164, e.g. "+31612345678")."""
-        resp = self._post(
-            "/v2/send",
-            {
-                "message": text,
-                "numberType": "single",
-                "recipients": [recipient],
-                "textMode": "normal",
-            },
-        )
+        """Send `text` to a single recipient (E.164, e.g. "+31612345678").
+
+        The v2/send schema expects ``number`` (the sending account) plus
+        ``recipients``; ``text_mode`` is snake_case. Omitting ``number``
+        makes signal-cli-rest-api >= 0.100 answer 400 "number missing".
+        """
+        payload: dict[str, Any] = {
+            "message": text,
+            "recipients": [recipient],
+            "text_mode": "normal",
+        }
+        if self.account:
+            payload["number"] = self.account
+        resp = self._post("/v2/send", payload)
         try:
             body = resp.json()
         except ValueError:

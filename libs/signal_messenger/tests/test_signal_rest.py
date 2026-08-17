@@ -39,9 +39,9 @@ def test_send_message_payload_and_headers():
     body = json.loads(seen["body"])
     assert body == {
         "message": "Hallo",
-        "numberType": "single",
+        "number": "+31612345678",
         "recipients": ["+31612345678"],
-        "textMode": "normal",
+        "text_mode": "normal",
     }
 
 

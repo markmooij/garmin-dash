@@ -225,6 +225,7 @@ is a good idea.)
 
 | Symptom | Fix |
 |---------|-----|
+| `chown: changing ownership of ... Operation not permitted` at boot (restart loop) | Your compose still has `user: "${PUID:-1000}:${PGID:-1000}"` — the entrypoint needs root to fix ownership. **Remove the `user:` line** (the image drops privileges itself). If you keep `user:` anyway, the entrypoint skips its fix and you must pre-create the dirs: `sudo chown -R 1000:1000 data logs` (match your `PUID`/`PGID`), then `docker compose up -d` |
 | `sqlite3.OperationalError: unable to open database file` at boot (both containers) | The `data/` dir on the Pi is not writable by the container uid (classic: Docker auto-created `./data` as root before you ever wrote into it). The image now auto-fixes this: the entrypoint chowns `./data` + `./logs` to `PUID:PGID` at every start. For an **already-running** broken stack: `sudo chown -R 1000:1000 data logs` (match your `PUID`/`PGID`), then `docker compose up -d` again — and make sure you pulled the latest image |
 | `docker pull` on Pi fails auth | Registry access changed / not yet granted on this host — confirm with your registry admin, or set `REGISTRY_USER`/`REGISTRY_TOKEN` env vars and `docker login ghcr.io/yourname` manually |
 | Build fails on arm64 | binfmt emulation not installed (step 1); run the binfmt container again after a reboot of the dev machine |

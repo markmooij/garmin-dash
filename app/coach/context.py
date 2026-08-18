@@ -31,6 +31,7 @@ class CoachContext:
 
     today: date
     days: list[dict] = field(default_factory=list)  # trailing window, oldest first
+    aggregates: dict = field(default_factory=dict)  # week means/counts, app-computed
     journal_today: dict = field(default_factory=dict)
     insights: list[dict] = field(default_factory=list)
 
@@ -49,6 +50,30 @@ class CoachContext:
                 f"  {d['date']}: herstel={rec} ({band}), strain={strain}, TSB={tsb}, "
                 f"slaap={sleep}, RHR={rhr}"
             )
+
+        # Week-level means/counts are computed HERE (trusted code), never by the
+        # model — so a weekly summary can cite them without violating the
+        # "LLM never computes numbers" rule (and without tripping grounding).
+        if self.aggregates and any(
+            self.aggregates[k] is not None
+            for k in ("recovery_score", "strain", "sleep_score", "rhr", "tsb")
+        ):
+            lines.append("")
+            lines.append("Weekoverzicht (gemiddelden berekend door de app):")
+            a = self.aggregates
+            parts: list[str] = []
+            for label, key in (
+                ("gem. herstel", "recovery_score"),
+                ("gem. strain", "strain"),
+                ("gem. slaap", "sleep_score"),
+                ("gem. RHR", "rhr"),
+                ("gem. TSB", "tsb"),
+            ):
+                v = a.get(key)
+                parts.append(f"{label}={v:.1f}" if v is not None else f"{label}=\u2013")
+            parts.append(f"trainingsdagen={a.get('training_days', 0)}")
+            parts.append(f"rustdagen={a.get('rest_days', 0)}")
+            lines.append("  " + " \u00b7 ".join(parts))
 
         if self.journal_today:
             lines.append("")
@@ -105,6 +130,22 @@ def build_context(
     entry = get_entry(session, day, user_id=user_id)
     journal_today = dict(entry.responses) if entry else {}
 
+    def _mean(values: list[float | None]) -> float | None:
+        vals = [v for v in values if v is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    aggregates: dict = {}
+    if days:
+        aggregates = {
+            "recovery_score": _mean([d["recovery_score"] for d in days]),
+            "strain": _mean([d["strain"] for d in days]),
+            "tsb": _mean([d["tsb"] for d in days]),
+            "sleep_score": _mean([d["sleep_score"] for d in days]),
+            "rhr": _mean([d["rhr"] for d in days]),
+            "training_days": sum(1 for d in days if (d["strain"] or 0) > 0),
+            "rest_days": sum(1 for d in days if d["strain"] is not None and d["strain"] <= 0),
+        }
+
     insights = [
         {
             "factor_label": i.factor_label,
@@ -116,4 +157,6 @@ def build_context(
         for i in compute_all_insights(session, end=day, user_id=user_id)
     ]
 
-    return CoachContext(today=day, days=days, journal_today=journal_today, insights=insights)
+    return CoachContext(
+        today=day, days=days, aggregates=aggregates, journal_today=journal_today, insights=insights
+    )

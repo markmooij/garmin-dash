@@ -33,8 +33,10 @@ SYSTEM_PROMPT = (
     "een getal verzinnen, schatten of afronden naar een ander getal.\n"
     "2. Noem als correlatie/verband ALLEEN de items onder 'Gevalideerde inzichten' — "
     "verzin nooit een eigen correlatie tussen dagboekfactoren en herstel/slaap.\n"
-    "3. Wees kort en concreet (max ~4 zinnen), Nederlands, adviserend, geen diagnoses.\n"
-    "4. Als de context niets zinnigs bevat om op te reageren, zeg dat expliciet "
+    "3. Voor weekoverzichten gebruik je de gemiddelden/aantallen uit 'Weekoverzicht' "
+    "(die zijn al door de app berekend) — reken zelf niets uit.\n"
+    "4. Wees kort en concreet (max ~4 zinnen), Nederlands, adviserend, geen diagnoses.\n"
+    "5. Als de context niets zinnigs bevat om op te reageren, zeg dat expliciet "
     "in plaats van iets te verzinnen."
 )
 
@@ -80,16 +82,21 @@ def _chat(client, prompt: str) -> str | None:
     return (choices[0].message.content or "").strip() or None
 
 
-def _grounded_reply(client, context_text: str, prompt: str) -> str | None:
-    """One chat call + groundedness check. None if the call fails or hallucinates."""
+def _grounded_reply(client, context_text: str, prompt: str) -> tuple[str | None, str | None]:
+    """One chat call + groundedness check.
+
+    Returns (reply, failure) where failure is None (ok), "error" (LLM call
+    failed — check endpoint/config/logs) or "ungrounded" (model cited
+    numbers not in the context — dropped by design, never forwarded).
+    """
     reply = _chat(client, prompt)
     if reply is None:
-        return None
+        return None, "error"
     ungrounded = find_ungrounded(reply, context_text)
     if ungrounded:
         logger.warning("Coach reply dropped \u2014 ungrounded numbers: %s", ungrounded)
-        return None
-    return reply
+        return None, "ungrounded"
+    return reply, None
 
 
 def morning_commentary(session: Session, day: date | None = None) -> str | None:
@@ -109,7 +116,8 @@ def morning_commentary(session: Session, day: date | None = None) -> str | None:
         "Geef een korte coach-opmerking (1-2 zinnen) bij het herstel/strain van vandaag, "
         "puttend uit bovenstaande cijfers."
     )
-    return _grounded_reply(client, context_text, prompt)
+    reply, _failure = _grounded_reply(client, context_text, prompt)
+    return reply
 
 
 def ask_coach(session: Session, question: str, day: date | None = None) -> str:
@@ -125,7 +133,16 @@ def ask_coach(session: Session, question: str, day: date | None = None) -> str:
     context = build_context(session, day)
     context_text = context.to_prompt_text()
     prompt = f"{context_text}\n\nVraag: {question.strip()}"
-    reply = _grounded_reply(client, context_text, prompt)
+    reply, failure = _grounded_reply(client, context_text, prompt)
     if reply is None:
-        return "Kon geen betrouwbaar antwoord genereren (LLM-fout of ongegronde cijfers)."
+        if failure == "ungrounded":
+            return (
+                "Kon geen betrouwbaar antwoord genereren — de coach noemde cijfers "
+                "die niet in de context staan. Stel een specifiekere vraag (bijv. "
+                "'hoe was mijn herstel deze week?')."
+            )
+        return (
+            "Kon geen antwoord genereren (LLM-fout). Controleer LLM_BASE_URL / "
+            "LLM_API_KEY / LLM_MODEL en de logs (docker compose logs)."
+        )
     return reply

@@ -96,6 +96,41 @@ def test_to_prompt_text_lists_journal_and_insights(seeded: Session):
     assert "ja" in text
 
 
+# ── aggregates (week-level numbers, app-computed) ─────────────────────
+
+def test_build_context_aggregates_single_day(seeded: Session):
+    ctx = build_context(seeded, DAY, window_days=1)
+    assert ctx.aggregates["recovery_score"] == 71.5
+    assert ctx.aggregates["strain"] == 15.25
+    assert ctx.aggregates["sleep_score"] == 81.0
+    assert ctx.aggregates["rhr"] == 45.0
+    assert ctx.aggregates["training_days"] == 1
+    assert ctx.aggregates["rest_days"] == 0
+
+
+def test_build_context_aggregates_multi_day(seeded: Session):
+    # 3-day window: only the seeded day has data, means = that day's values
+    ctx = build_context(seeded, DAY, window_days=3)
+    assert ctx.aggregates["recovery_score"] == 71.5
+    assert ctx.aggregates["training_days"] == 1
+    assert ctx.aggregates["rest_days"] == 0  # data-less days are not rest days
+
+
+def test_build_context_aggregates_empty_window(seeded: Session):
+    ctx = build_context(seeded, date(2026, 8, 1), window_days=3)  # no data at all
+    assert ctx.aggregates["recovery_score"] is None
+    assert ctx.aggregates["training_days"] == 0
+    assert "Weekoverzicht" not in ctx.to_prompt_text()
+
+
+def test_to_prompt_text_includes_weekoverzicht(seeded: Session):
+    ctx = build_context(seeded, DAY, window_days=1)
+    text = ctx.to_prompt_text()
+    assert "Weekoverzicht" in text
+    assert "gem. herstel=71.5" in text
+    assert "trainingsdagen=1" in text
+
+
 # ── client.py (mocked LLM) ──────────────────────────────────────────────
 
 class _FakeMessage:
@@ -150,7 +185,8 @@ def test_ask_coach_ungrounded_reply_is_dropped(seeded: Session, monkeypatch):
     client = FakeClient(lambda kwargs: "Je VO2max is 61.4 en HRV was 88ms.")  # noqa: ARG005
     monkeypatch.setattr("app.coach.client.get_client", lambda: client)
     reply = ask_coach(seeded, "Hoe gaat het?", DAY)
-    assert "kon geen betrouwbaar antwoord" in reply.lower()
+    assert "niet in de context" in reply.lower()
+    assert "specifiekere vraag" in reply.lower()
 
 
 def test_ask_coach_llm_error_returns_fallback(seeded: Session, monkeypatch):
@@ -160,7 +196,19 @@ def test_ask_coach_llm_error_returns_fallback(seeded: Session, monkeypatch):
     client = FakeClient(_raise)
     monkeypatch.setattr("app.coach.client.get_client", lambda: client)
     reply = ask_coach(seeded, "Hoe gaat het?", DAY)
-    assert "kon geen betrouwbaar antwoord" in reply.lower()
+    assert "llm-fout" in reply.lower()
+    assert "llm_base_url" in reply.lower()
+
+
+def test_ask_coach_weekly_question_grounded_via_aggregates(seeded: Session, monkeypatch):
+    # The model may answer a weekly question with the app-computed averages;
+    # those numbers ARE in the context (Weekoverzicht), so the reply passes.
+    client = FakeClient(
+        lambda kwargs: "Je week: gem. herstel 71.5, gem. strain 15.3, 1 trainingsdag."  # noqa: ARG005
+    )
+    monkeypatch.setattr("app.coach.client.get_client", lambda: client)
+    reply = ask_coach(seeded, "Hoe was mijn week?", DAY)
+    assert "week" in reply.lower()
 
 
 def test_morning_commentary_none_when_disabled(seeded: Session, monkeypatch):

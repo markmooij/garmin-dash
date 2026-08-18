@@ -17,6 +17,7 @@ Commands:
   ingest [sync|backfill|schedule]   Data ingestion
   metrics [compute [DAYS]]          Metrics engine (compute scores)
   report [today|weekly|monthly]     Metrics reports
+  journal [today|log|insights]      Journal (Phase 5)
 """
 
 
@@ -38,6 +39,8 @@ def main() -> int:
         from .metrics.cli import main as run
     elif command == "report":
         from .metrics.cli import report_main as run
+    elif command == "journal":
+        from .journal.cli import main as run
     else:
         print(f"Unknown command: {command}")
         print(USAGE)

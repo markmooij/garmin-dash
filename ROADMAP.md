@@ -219,11 +219,25 @@ at `SIGNAL_REPORT_TIME`, command poll every `SIGNAL_COMMAND_POLL_MINUTES`) — a
 **Remaining:** provision the number (see open item below), set `SIGNAL_ENABLED=true` +
 `SIGNAL_ACCOUNT`/`SIGNAL_RECIPIENT`, start the scheduler, one unattended end-to-end run.
 
-### Phase 5 — Journal & Correlation Insights
+### Phase 5 — Journal & Correlation Insights  ✅ (implemented, see commit log)
 Evening survey (Signal-first, web fallback); pre-registered questions + free tags; gated insight
 engine (≥5/≥5 samples, effect size + direction); insights surfaced in dashboard + weekly Signal digest.
-*Done when:* engine demonstrably refuses under-powered claims; a real alcohol/HRV-style insight
-renders end-to-end after ~2 weeks of logging.
+
+**Status (implemented):** `journal_entries` table (schema v1) now has a full layer around it:
+`app/journal/` — factor registry (`schema.py`, 7 pre-registered factors, bool/count kinds),
+entry storage (`entries.py`, per-day upsert/merge, one row per day), gated correlation engine
+(`insights.py`: factor × outcome = recovery_score / sleep_score, outcome read `JOURNAL_OUTCOME_OFFSET_DAYS`
+after the logged day; both groups need ≥ `JOURNAL_INSIGHT_MIN_SAMPLES` (5) days in the
+`JOURNAL_INSIGHT_WINDOW_DAYS` (90) window; output = direction + mean difference + Cohen's d +
+window, labeled *insight*; never p-values, never under-powered claims). Signal commands `/log`,
+`/journal`, `/insights` routed in `route_command`; scheduler jobs: evening reminder
+(`SIGNAL_JOURNAL_TIME`, default 20:30) + weekly digest (`SIGNAL_DIGEST_TIME`/`SIGNAL_DIGEST_DAY`,
+silent until the sample gate clears); web: `/journal` (form + 30-day history) and `/insights`
+pages + `/api/journal` + `/api/insights`; CLI: `gdash journal today|log|insights`.
+105 app + 14 lib tests green.
+
+*Done when:* engine demonstrably refuses under-powered claims (✅ tests); a real
+alcohol/HRV-style insight renders end-to-end after ~2 weeks of logging (⏳ needs real data).
 
 ### Phase 6 — LLM Coach
 Context assembler (7-day TSB, recovery, sleep deficit, recent load, journal — exact numbers, no

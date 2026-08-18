@@ -37,7 +37,12 @@ gdash ingest schedule
 # Web dashboard (dev; port overridable via GARMINDASH_PORT)
 uvicorn app.app:app --port 8123
 # → Today:  http://localhost:8123/  ·  Trends: /trends  ·  Intraday: /intraday
-# → JSON:   /api/summary · /api/trends · /api/intraday
+#   Journal: /journal  ·  Insights: /insights
+# → JSON:   /api/summary · /api/trends · /api/intraday · /api/journal · /api/insights
+
+# Journal (Phase 5) — web form, CLI, or Signal (/log alcohol 2)
+gdash journal log stress_hoog j   # log a factor for today
+gdash journal insights            # gated correlation insights
 
 # Start dev containers (app + signal-api)
 make compose-dev

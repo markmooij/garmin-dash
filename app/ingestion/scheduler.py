@@ -96,6 +96,26 @@ def run_command_poll_job() -> None:
         logger.exception("Command poll job failed")
 
 
+def run_journal_reminder_job() -> None:
+    """Send the evening journal prompt (no-op when Signal is disabled)."""
+    try:
+        from ..messaging.loop import run_journal_reminder
+
+        run_journal_reminder()
+    except Exception:  # noqa: BLE001
+        logger.exception("Journal reminder job failed")
+
+
+def run_weekly_digest_job() -> None:
+    """Send the weekly insights digest (no-op when Signal is disabled)."""
+    try:
+        from ..messaging.loop import run_weekly_digest
+
+        run_weekly_digest()
+    except Exception:  # noqa: BLE001
+        logger.exception("Weekly digest job failed")
+
+
 def schedule() -> None:
     """Start the blocking scheduler."""
     settings = get_settings()
@@ -145,11 +165,37 @@ def schedule() -> None:
             coalesce=True,
             max_instances=1,
         )
+        journal_hour, journal_minute = _parse_report_time(settings.SIGNAL_JOURNAL_TIME)
+        scheduler.add_job(
+            run_journal_reminder_job,
+            trigger=CronTrigger(hour=journal_hour, minute=journal_minute),
+            id="signal-journal-reminder",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        digest_hour, digest_minute = _parse_report_time(settings.SIGNAL_DIGEST_TIME)
+        scheduler.add_job(
+            run_weekly_digest_job,
+            trigger=CronTrigger(
+                day_of_week=settings.SIGNAL_DIGEST_DAY, hour=digest_hour, minute=digest_minute
+            ),
+            id="signal-weekly-digest",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
         logger.info(
-            "Signal jobs scheduled: report %02d:%02d, command poll every %d min",
+            "Signal jobs scheduled: report %02d:%02d, command poll every %d min, "
+            "journal reminder %02d:%02d, weekly digest %s %02d:%02d",
             hour,
             minute,
             poll_min,
+            journal_hour,
+            journal_minute,
+            settings.SIGNAL_DIGEST_DAY,
+            digest_hour,
+            digest_minute,
         )
     else:
         logger.info("Signal disabled — no morning report / command polling")

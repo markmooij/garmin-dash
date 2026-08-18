@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING
 
 from signal_messenger import Message, Messenger
 
+from app.journal.entries import get_entry
 from app.messaging.briefing import build_briefing, route_command
-from app.messaging.loop import poll_commands
+from app.messaging.journal_commands import build_weekly_digest, log_prompt_text
+from app.messaging.loop import poll_commands, run_journal_reminder, run_weekly_digest
 
 
 if TYPE_CHECKING:
@@ -116,6 +118,117 @@ def test_poll_answers_only_allowed_sender_and_commands(seeded: Session, monkeypa
     recipient, reply = m.sent[0]
     assert recipient == "+31600000000"
     assert "Herstel" in reply
+
+
+# ── journal commands (Phase 5) ───────────────────────────────────────
+
+def test_route_log_bool_factor(seeded: Session):
+    reply = route_command(seeded, "/log stress_hoog j", DAY)
+    assert "Genoteerd" in reply
+    entry = get_entry(seeded, DAY)
+    assert entry.responses == {"stress_hoog": True}
+
+
+def test_route_log_count_factor(seeded: Session):
+    reply = route_command(seeded, "/log alcohol 2", DAY)
+    assert "Genoteerd" in reply
+    entry = get_entry(seeded, DAY)
+    assert entry.responses == {"alcohol": 2.0}
+
+
+def test_route_log_merges_across_calls(seeded: Session):
+    route_command(seeded, "/log alcohol 1", DAY)
+    route_command(seeded, "/log ziek n", DAY)
+    entry = get_entry(seeded, DAY)
+    assert entry.responses == {"alcohol": 1.0, "ziek": False}
+
+
+def test_route_log_unknown_factor(seeded: Session):
+    reply = route_command(seeded, "/log bogus j", DAY)
+    assert "Onbekende factor" in reply
+
+
+def test_route_log_bad_bool_value(seeded: Session):
+    reply = route_command(seeded, "/log stress_hoog maybe", DAY)
+    assert "j/n" in reply
+    assert get_entry(seeded, DAY) is None
+
+
+def test_route_log_bad_count_value(seeded: Session):
+    reply = route_command(seeded, "/log alcohol veel", DAY)
+    assert "getal" in reply
+
+
+def test_route_log_missing_args(seeded: Session):
+    reply = route_command(seeded, "/log", DAY)
+    assert "Gebruik" in reply
+
+
+def test_route_journal_empty_shows_prompt(seeded: Session):
+    reply = route_command(seeded, "/journal", DAY)
+    assert "/log" in reply
+
+
+def test_route_journal_shows_logged_entry(seeded: Session):
+    route_command(seeded, "/log alcohol 2", DAY)
+    reply = route_command(seeded, "/journal", DAY)
+    assert "Alcohol" in reply
+    assert "2" in reply
+
+
+def test_route_insights_under_gate(seeded: Session):
+    reply = route_command(seeded, "/insights", DAY)
+    assert "Nog geen inzichten" in reply
+
+
+def test_help_lists_journal_commands(seeded: Session):
+    reply = route_command(seeded, "/help", DAY)
+    assert "/log" in reply
+    assert "/journal" in reply
+    assert "/insights" in reply
+
+
+def test_log_prompt_text_lists_all_factors():
+    text = log_prompt_text(DAY)
+    assert "alcohol" in text
+    assert "stress_hoog" in text
+
+
+def test_build_weekly_digest_none_when_ungated(seeded: Session):
+    assert build_weekly_digest(seeded, DAY) is None
+
+
+# ── journal reminder / digest scheduler jobs ─────────────────────────
+
+def test_run_journal_reminder_sends_prompt(monkeypatch):
+    class _Settings:
+        SIGNAL_RECIPIENT = "+31600000000"
+
+    m = FakeMessenger()
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    run_journal_reminder()
+    assert len(m.sent) == 1
+    recipient, text = m.sent[0]
+    assert recipient == "+31600000000"
+    assert "/log" in text
+
+
+def test_run_journal_reminder_noop_when_disabled(monkeypatch):
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: None)
+    run_journal_reminder()  # must not raise
+
+
+def test_run_weekly_digest_skips_when_ungated(seeded: Session, monkeypatch):
+    class _Settings:
+        SIGNAL_RECIPIENT = "+31600000000"
+
+    m = FakeMessenger()
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
+    run_weekly_digest()
+    assert m.sent == []  # nothing cleared the sample gate
 
 
 def _scope(seeded: Session):

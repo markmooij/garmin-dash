@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Inzichten · Garmin Dash{% endblock %}
+{% block nav_insights %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-semibold">Inzichten</h1>
+  <div class="text-xs text-zinc-500">
+    venster {{ data.window_days }}d · min. {{ data.min_samples }} dagen per groep
+  </div>
+</div>
+
+{% if not data.insights %}
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center">
+    <p class="text-sm text-zinc-400">Nog geen inzichten.</p>
+    <p class="text-xs text-zinc-600 mt-2">
+      Elke factor heeft &ge;{{ data.min_samples }} gelogde dagen mét én zonder nodig
+      (binnen een venster van {{ data.window_days }} dagen) voordat een correlatie
+      betrouwbaar genoeg is om te tonen. Log dagelijks via <a href="/journal" class="text-emerald-400">/journal</a>
+      of Signal <code class="text-zinc-400">/log</code>.
+    </p>
+  </div>
+{% else %}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for i in data.insights %}
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <div class="flex items-baseline justify-between">
+          <h2 class="text-sm font-medium text-zinc-200">{{ i.factor_label }} → {{ i.outcome_label }}</h2>
+          <span class="text-[10px] uppercase tracking-wide text-zinc-500">effect: {{ i.magnitude }}</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span class="text-3xl font-bold {% if i.diff >= 0 %}text-emerald-400{% else %}text-rose-400{% endif %}">
+            {{ '%+.1f'|format(i.diff) }}
+          </span>
+          <span class="text-xs text-zinc-500">punten gemiddeld ({{ i.direction }})</span>
+        </div>
+        <div class="mt-3 text-[11px] text-zinc-500 space-y-0.5">
+          <div class="flex justify-between"><span>met</span><span class="text-zinc-300">{{ i.mean_exposed }} (n={{ i.n_exposed }})</span></div>
+          <div class="flex justify-between"><span>zonder</span><span class="text-zinc-300">{{ i.mean_baseline }} (n={{ i.n_baseline }})</span></div>
+          <div class="flex justify-between"><span>Cohen's d</span><span class="text-zinc-300">{{ i.cohens_d }}</span></div>
+        </div>
+        <div class="mt-3 text-[10px] text-zinc-600">{{ i.window_start }} – {{ i.window_end }}</div>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

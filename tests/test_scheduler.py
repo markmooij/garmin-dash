@@ -97,3 +97,45 @@ def test_schedule_runs_first_sync_as_background_job(monkeypatch):
     assert sync_job["next_run_time"] is not None, "first sync must run as a scheduled job"
     assert sync_job["max_instances"] == 1
     assert not sync_spy, "sync must not run synchronously before scheduler.start()"
+
+
+def test_schedule_registers_journal_and_digest_jobs_when_signal_enabled(monkeypatch):
+    """Phase 5: evening journal reminder + weekly digest must be scheduled
+    alongside the morning report and command poll when Signal is enabled."""
+    calls: list[dict] = []
+
+    class FakeScheduler:
+        def __init__(self, timezone=None):
+            self.timezone = timezone
+
+        def add_job(self, fn, trigger=None, id=None, **kw):  # noqa: ARG002
+            calls.append({"id": id, **kw})
+
+        def start(self):
+            pass
+
+    class FakeSettings:
+        TIMEZONE = "Europe/Amsterdam"
+        SYNC_INTERVAL_MINUTES = 15
+        SYNC_DAYS_BACK = 3
+        SIGNAL_ENABLED = True
+        SIGNAL_REPORT_TIME = "07:30"
+        SIGNAL_COMMAND_POLL_MINUTES = 5
+        SIGNAL_JOURNAL_TIME = "20:30"
+        SIGNAL_DIGEST_TIME = "20:00"
+        SIGNAL_DIGEST_DAY = "sun"
+
+    monkeypatch.setattr(scheduler, "BlockingScheduler", FakeScheduler)
+    monkeypatch.setattr(scheduler, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(scheduler, "run_sync_pass", lambda: None)
+
+    scheduler.schedule()
+
+    ids = {c["id"] for c in calls}
+    assert ids == {
+        "garmin-sync",
+        "signal-morning-report",
+        "signal-command-poll",
+        "signal-journal-reminder",
+        "signal-weekly-digest",
+    }

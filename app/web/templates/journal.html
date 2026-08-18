@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Dagboek · Garmin Dash{% endblock %}
+{% block nav_journal %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <div class="flex items-center gap-3">
+    <a href="/journal?date={{ prev }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
+    <h1 class="text-xl font-semibold">
+      Dagboek · {{ day.strftime('%A %d %B %Y') }}
+    </h1>
+    <a href="/journal?date={{ next }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  <div class="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">
+      Factoren voor {{ data.date }}
+    </h2>
+    <form method="post" action="/journal" class="space-y-3">
+      <input type="hidden" name="entry_date" value="{{ data.date }}">
+      {% for f in data.factors %}
+        {% set current = data.responses.get(f.key) %}
+        <div class="flex items-center justify-between gap-4 rounded-lg bg-zinc-800/60 px-3 py-2.5">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-zinc-200">{{ f.label }}</div>
+            <div class="text-[11px] text-zinc-500">{{ f.prompt }}</div>
+          </div>
+          {% if f.kind == 'bool' %}
+            <label class="flex items-center gap-2 shrink-0">
+              <input type="checkbox" name="f_{{ f.key }}" {% if current %}checked{% endif %}
+                     class="h-5 w-5 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500">
+            </label>
+          {% else %}
+            <input type="number" step="1" min="0" name="f_{{ f.key }}"
+                   value="{{ current if current is not none else '' }}"
+                   class="w-20 shrink-0 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1 text-sm text-right">
+          {% endif %}
+        </div>
+      {% endfor %}
+      <div>
+        <label class="text-xs text-zinc-500 block mb-1">Notities (niet gebruikt voor correlaties)</label>
+        <textarea name="notes" rows="2"
+                  class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-200">{{ data.notes or '' }}</textarea>
+      </div>
+      <button type="submit"
+              class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-medium text-white">
+        Opslaan
+      </button>
+    </form>
+  </div>
+
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">Laatste 30 dagen</h2>
+    {% if not history.entries %}
+      <p class="text-sm text-zinc-500">Nog geen dagboekregels.</p>
+    {% else %}
+      <div class="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
+        {% for e in history.entries %}
+          <div class="text-xs">
+            <div class="text-zinc-400 font-medium">{{ e.date }}</div>
+            <div class="text-zinc-500">
+              {% for key, r in e.responses.items() %}
+                <span class="inline-block mr-2">{{ r.label }}: {{ 'ja' if r.value is sameas true else ('nee' if r.value is sameas false else r.value) }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

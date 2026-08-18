@@ -166,6 +166,87 @@ def test_api_invalid_date(client):
     assert client.get("/api/trends?days=9999").status_code == 422
 
 
+# ── journal + insights (Phase 5) ───────────────────────────────────
+
+def test_journal_for_empty_day(seeded: Session):
+    d = query.journal_for(seeded, date(2026, 8, 9))
+    assert d["responses"] == {}
+    assert len(d["factors"]) >= 5
+
+
+def test_journal_for_logged_day(seeded: Session):
+    from app.journal.entries import upsert_response
+
+    upsert_response(seeded, date(2026, 8, 9), "alcohol", 2.0)
+    d = query.journal_for(seeded, date(2026, 8, 9))
+    assert d["responses"] == {"alcohol": 2.0}
+
+
+def test_journal_history_most_recent_first(seeded: Session):
+    from app.journal.entries import upsert_response
+
+    upsert_response(seeded, date(2026, 8, 5), "alcohol", 1.0)
+    upsert_response(seeded, date(2026, 8, 7), "alcohol", 2.0)
+    hist = query.journal_history(seeded, days=30, end=date(2026, 8, 9))
+    assert [e["date"] for e in hist["entries"]] == ["2026-08-07", "2026-08-05"]
+
+
+def test_insights_for_empty_when_ungated(seeded: Session):
+    d = query.insights_for(seeded, end=date(2026, 8, 9))
+    assert d["insights"] == []
+    assert d["min_samples"] >= 1
+
+
+def test_journal_view_renders(client):
+    r = client.get("/journal?date=2026-08-09")
+    assert r.status_code == 200
+    assert "Dagboek" in r.text
+    assert "Alcohol" in r.text
+
+
+def test_journal_save_roundtrip(client):
+    r = client.post(
+        "/journal",
+        data={"entry_date": "2026-08-09", "f_alcohol": "2", "f_stress_hoog": "on", "notes": "test"},
+    )
+    assert r.status_code == 200  # TestClient follows the 303 redirect
+    assert len(r.history) == 1
+    assert r.history[0].status_code == 303
+    r2 = client.get("/api/journal?date=2026-08-09")
+    body = r2.json()
+    assert body["responses"]["alcohol"] == 2.0
+    assert body["responses"]["stress_hoog"] is True
+    assert body["notes"] == "test"
+
+
+def test_journal_save_unchecked_bool_is_false(client):
+    client.post("/journal", data={"entry_date": "2026-08-09", "f_ziek": "on"})
+    body = client.get("/api/journal?date=2026-08-09").json()
+    assert body["responses"]["ziek"] is True
+    # resubmitting without the checkbox flips it back to False (form omits unchecked boxes)
+    client.post("/journal", data={"entry_date": "2026-08-09"})
+    body2 = client.get("/api/journal?date=2026-08-09").json()
+    assert body2["responses"]["ziek"] is False
+
+
+def test_insights_view_renders_empty_state(client):
+    r = client.get("/insights")
+    assert r.status_code == 200
+    assert "Nog geen inzichten" in r.text
+
+
+def test_api_journal_json(client):
+    d = client.get("/api/journal?date=2026-08-09").json()
+    assert d["date"] == "2026-08-09"
+    assert "factors" in d
+
+
+def test_api_insights_json(client):
+    d = client.get("/api/insights").json()
+    assert "insights" in d
+    assert "window_days" in d
+
+
 
 
 

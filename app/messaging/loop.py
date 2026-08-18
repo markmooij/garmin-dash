@@ -7,6 +7,7 @@ import logging
 from ..db import session_scope
 from ..settings import get_settings
 from .briefing import build_briefing, route_command
+from .journal_commands import build_weekly_digest, log_prompt_text
 
 
 logger = logging.getLogger("garmin_dash.messaging.loop")
@@ -54,6 +55,51 @@ def run_morning_report() -> None:
         logger.info("Morning report sent to %s", recipient)
     except Exception:  # noqa: BLE001
         logger.exception("Morning report send failed")
+
+
+def run_journal_reminder() -> None:
+    """Send the evening journal prompt (scheduler job at SIGNAL_JOURNAL_TIME)."""
+    settings = get_settings()
+    messenger = get_messenger()
+    if messenger is None:
+        logger.info("Journal reminder skipped (Signal disabled)")
+        return
+    recipient = settings.SIGNAL_RECIPIENT
+    if not recipient:
+        logger.warning("SIGNAL_RECIPIENT unset — journal reminder skipped")
+        return
+    try:
+        messenger.send_message(recipient, log_prompt_text())
+        logger.info("Journal reminder sent to %s", recipient)
+    except Exception:  # noqa: BLE001
+        logger.exception("Journal reminder send failed")
+
+
+def run_weekly_digest() -> None:
+    """Send the weekly insights digest (scheduler job, e.g. Sunday evening).
+
+    Silent when no factor clears the sample gate yet — the digest is not a
+    nag; an empty digest every week would just get muted.
+    """
+    settings = get_settings()
+    messenger = get_messenger()
+    if messenger is None:
+        logger.info("Weekly digest skipped (Signal disabled)")
+        return
+    recipient = settings.SIGNAL_RECIPIENT
+    if not recipient:
+        logger.warning("SIGNAL_RECIPIENT unset — weekly digest skipped")
+        return
+    with session_scope() as session:
+        text = build_weekly_digest(session)
+    if text is None:
+        logger.info("Weekly digest skipped (no insights cleared the sample gate yet)")
+        return
+    try:
+        messenger.send_message(recipient, text)
+        logger.info("Weekly digest sent to %s", recipient)
+    except Exception:  # noqa: BLE001
+        logger.exception("Weekly digest send failed")
 
 
 def poll_commands() -> None:

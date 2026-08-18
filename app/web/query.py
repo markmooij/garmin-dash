@@ -16,6 +16,9 @@ from ..db.models import (
     IntradaySeries,
     SleepSession,
 )
+from ..journal.entries import entries_in_range, get_entry
+from ..journal.insights import compute_all_insights
+from ..journal.schema import FACTORS, FACTORS_BY_KEY
 from ..settings import get_settings
 
 
@@ -210,6 +213,70 @@ def trends_for(session: Session, days: int = 90, end: date | None = None) -> dic
         "bb_wake": bb_wake,
         "steps": steps,
         "vo2max": vo2,
+    }
+
+
+def journal_for(session: Session, day: date) -> dict:
+    """Today's journal entry (raw responses + factor registry for the form)."""
+    entry = get_entry(session, day)
+    return {
+        "date": day.isoformat(),
+        "responses": entry.responses if entry else {},
+        "notes": entry.notes if entry else None,
+        "factors": [
+            {"key": f.key, "label": f.label, "kind": f.kind, "prompt": f.prompt} for f in FACTORS
+        ],
+    }
+
+
+def journal_history(session: Session, days: int = 30, end: date | None = None) -> dict:
+    """Recent logged entries, most recent first (web history view)."""
+    end = end or date.today()
+    start = end - timedelta(days=days - 1)
+    entries = entries_in_range(session, start, end)
+    out = []
+    for e in reversed(entries):
+        out.append(
+            {
+                "date": e.entry_date.isoformat(),
+                "responses": {
+                    k: {"label": (FACTORS_BY_KEY.get(k).label if FACTORS_BY_KEY.get(k) else k), "value": v}
+                    for k, v in e.responses.items()
+                },
+            }
+        )
+    return {"start": start.isoformat(), "end": end.isoformat(), "entries": out}
+
+
+def insights_for(session: Session, end: date | None = None) -> dict:
+    """Gated correlation insights (dashboard + /api/insights)."""
+    end = end or date.today()
+    insights = compute_all_insights(session, end=end)
+    settings = get_settings()
+    return {
+        "end": end.isoformat(),
+        "window_days": settings.JOURNAL_INSIGHT_WINDOW_DAYS,
+        "min_samples": settings.JOURNAL_INSIGHT_MIN_SAMPLES,
+        "insights": [
+            {
+                "factor_key": i.factor_key,
+                "factor_label": i.factor_label,
+                "outcome_key": i.outcome_key,
+                "outcome_label": i.outcome_label,
+                "mean_exposed": round(i.mean_exposed, 1),
+                "mean_baseline": round(i.mean_baseline, 1),
+                "diff": round(i.diff, 1),
+                "cohens_d": round(i.cohens_d, 2),
+                "magnitude": i.magnitude_label,
+                "direction": i.direction,
+                "n_exposed": i.n_exposed,
+                "n_baseline": i.n_baseline,
+                "window_start": i.window_start.isoformat(),
+                "window_end": i.window_end.isoformat(),
+                "text": i.text(),
+            }
+            for i in insights
+        ],
     }
 
 

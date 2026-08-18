@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from ..settings import get_settings
 from ..web.query import summary_for
+from .journal_commands import route_insights, route_journal, route_log
 
 
 if TYPE_CHECKING:
@@ -159,6 +160,9 @@ _COMMANDS: dict[str, str] = {
     "/recovery": "herstel + componenten",
     "/strain": "strain + trainingsbalans",
     "/sleep": "slaapscore + tijden",
+    "/log <factor> <j/n of aantal>": "dagboekfactor loggen",
+    "/journal": "vandaag gelogde factoren",
+    "/insights": "gated correlatie-inzichten",
     "/help": "deze lijst",
 }
 
@@ -176,6 +180,12 @@ def route_command(session: Session, text: str, day: date | None = None) -> str:
         return _strain_text(session, day)
     if cmd == "/sleep":
         return _sleep_text(session, day)
+    if cmd == "/log":
+        return route_log(session, text.strip().split()[1:], day)
+    if cmd == "/journal":
+        return route_journal(session, day)
+    if cmd == "/insights":
+        return route_insights(session, day)
     if cmd in ("/help", "/start"):
         header = f"Garmin Dash — commando's (dag: {_dutch_date(day)})"
         body = "\n".join(f"{c} — {d}" for c, d in _COMMANDS.items())

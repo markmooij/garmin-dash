@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     SIGNAL_RECIPIENT: str | None = None  # number that receives reports/commands
     SIGNAL_REPORT_TIME: str = "07:30"  # morning briefing (local, Europe/Amsterdam)
     SIGNAL_COMMAND_POLL_MINUTES: int = 5
+    SIGNAL_JOURNAL_TIME: str = "20:30"  # evening journal reminder
+    SIGNAL_DIGEST_TIME: str = "20:00"  # weekly insights digest
+    SIGNAL_DIGEST_DAY: str = "sun"  # APScheduler CronTrigger day_of_week (mon..sun)
 
     # Garmin
     GARMINTOKENS: str | None = None
@@ -84,6 +87,17 @@ class Settings(BaseSettings):
     # Duration-based load for strength-like sports (load points per minute),
     # because HR undercounts strength. Configurable per sport profile.
     SPORT_LOAD_FACTORS: str = '{"strength_training": 45.0, "boxing": 25.0}'
+
+    # ── Journal & insights (Phase 5) ──────────────────────────────────────
+    # Gated correlation engine: a factor needs >= this many days in BOTH the
+    # exposed and baseline groups (after joining with an outcome score)
+    # before an insight is reported at all — never report below threshold.
+    JOURNAL_INSIGHT_MIN_SAMPLES: int = 5
+    JOURNAL_INSIGHT_WINDOW_DAYS: int = 90
+    # A journal entry logged for day D describes what happened during D
+    # (typically logged in the evening); the behavioral effect shows up in
+    # the *next* morning's recovery/sleep (the night from D to D+1).
+    JOURNAL_OUTCOME_OFFSET_DAYS: int = 1
 
     @property
     def is_prod(self) -> bool:

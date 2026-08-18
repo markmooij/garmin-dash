@@ -44,6 +44,9 @@ uvicorn app.app:app --port 8123
 gdash journal log stress_hoog j   # log a factor for today
 gdash journal insights            # gated correlation insights
 
+# LLM coach (Phase 6) — needs LLM_ENABLED=true + LLM_BASE_URL in .env
+gdash coach ask "Hoe ging deze week?"   # or Signal /ask, or web /coach
+
 # Start dev containers (app + signal-api)
 make compose-dev
 

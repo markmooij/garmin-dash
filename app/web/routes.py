@@ -13,6 +13,7 @@ from sqlalchemy import text
 from ..db import get_session
 from ..journal.entries import upsert_entry
 from ..journal.schema import FACTORS_BY_KEY
+from ..settings import get_settings
 from . import query
 
 
@@ -144,6 +145,33 @@ def insights_view(
     finally:
         db.close()
     return templates.TemplateResponse(request, "insights.html", {"data": data})
+
+
+@router.get("/coach")
+def coach_view(request: Request):
+    settings = get_settings()
+    return templates.TemplateResponse(
+        request, "coach.html", {"enabled": settings.LLM_ENABLED}
+    )
+
+
+@router.post("/api/coach/ask")
+async def api_coach_ask(request: Request, db: Session = Depends(_db)):  # noqa: B008
+    """Ask the coach a free-form question, grounded in the same numbers the
+    dashboard shows. Always returns 200 with a text answer — disabled/failed
+    states are user-facing messages, not errors (matches ask_coach's contract).
+    """
+    body = await request.json()
+    question = str(body.get("question") or "").strip()
+    if not question:
+        return JSONResponse({"answer": "Stel een vraag."}, status_code=400)
+    try:
+        from ..coach.client import ask_coach
+
+        answer = ask_coach(db, question)
+    finally:
+        db.close()
+    return JSONResponse({"answer": answer})
 
 
 @router.get("/intraday")

@@ -186,6 +186,48 @@ def test_help_lists_journal_commands(seeded: Session):
     assert "/log" in reply
     assert "/journal" in reply
     assert "/insights" in reply
+    assert "/ask" in reply
+
+
+# ── coach command (Phase 6) ───────────────────────────────────────
+
+def test_route_ask_missing_question(seeded: Session):
+    reply = route_command(seeded, "/ask", DAY)
+    assert "Gebruik" in reply
+
+
+def test_route_ask_disabled_coach(seeded: Session, monkeypatch):
+    monkeypatch.setattr("app.coach.client.get_client", lambda: None)
+    reply = route_command(seeded, "/ask hoe gaat het?", DAY)
+    assert "niet beschikbaar" in reply.lower()
+
+
+def test_build_briefing_without_commentary_by_default(seeded: Session):
+    text = build_briefing(seeded, DAY)
+    assert "🤖" not in text  # commentary only appended when with_commentary=True
+
+
+def test_build_briefing_with_commentary_disabled_llm_is_silent(seeded: Session, monkeypatch):
+    class _Settings:
+        TIMEZONE = "Europe/Amsterdam"
+        LLM_ENABLED = False
+        LLM_MORNING_COMMENTARY = True
+
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
+    text = build_briefing(seeded, DAY, with_commentary=True)
+    assert "🤖" not in text
+
+
+def test_build_briefing_with_commentary_appends_grounded_line(seeded: Session, monkeypatch):
+    class _Settings:
+        TIMEZONE = "Europe/Amsterdam"
+        LLM_ENABLED = True
+        LLM_MORNING_COMMENTARY = True
+
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.coach.client.morning_commentary", lambda session, day: "Mooi herstel!")  # noqa: ARG005
+    text = build_briefing(seeded, DAY, with_commentary=True)
+    assert "🤖 Mooi herstel!" in text
 
 
 def test_log_prompt_text_lists_all_factors():

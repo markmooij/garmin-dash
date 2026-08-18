@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Coach · Garmin Dash{% endblock %}
+{% block nav_coach %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-semibold">Coach</h1>
+</div>
+
+{% if not enabled %}
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center">
+    <p class="text-sm text-zinc-400">De coach is uitgeschakeld.</p>
+    <p class="text-xs text-zinc-600 mt-2">
+      Zet <code class="text-zinc-400">LLM_ENABLED=true</code> en configureer
+      <code class="text-zinc-400">LLM_BASE_URL</code> / <code class="text-zinc-400">LLM_MODEL</code>
+      in <code class="text-zinc-400">.env</code> om de coach te activeren.
+    </p>
+  </div>
+{% else %}
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5" x-data="coachPage()">
+    <p class="text-xs text-zinc-500 mb-3">
+      Antwoorden zijn gegrond in dezelfde cijfers als het dashboard (herstel, strain, slaap,
+      dagboek, gevalideerde inzichten). De coach verzint nooit een getal of correlatie.
+    </p>
+    <div class="space-y-3 mb-4 max-h-96 overflow-y-auto" x-show="history.length">
+      <template x-for="turn in history" :key="turn.id">
+        <div>
+          <div class="text-sm text-zinc-300 font-medium">Jij</div>
+          <div class="text-sm text-zinc-400 mb-2" x-text="turn.question"></div>
+          <div class="text-sm text-emerald-400 font-medium">Coach</div>
+          <div class="text-sm text-zinc-200 whitespace-pre-wrap" x-text="turn.answer"></div>
+        </div>
+      </template>
+    </div>
+    <form @submit.prevent="ask()" class="flex gap-2">
+      <input type="text" x-model="question" placeholder="Hoe ging deze week?"
+             class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-200"
+             :disabled="loading">
+      <button type="submit" :disabled="loading || !question.trim()"
+              class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-medium text-white">
+        <span x-show="!loading">Vraag</span>
+        <span x-show="loading">...</span>
+      </button>
+    </form>
+  </div>
+
+  <script>
+  function coachPage() {
+    return {
+      question: '',
+      loading: false,
+      history: [],
+      async ask() {
+        const q = this.question.trim();
+        if (!q || this.loading) return;
+        this.loading = true;
+        this.question = '';
+        try {
+          const res = await fetch('/api/coach/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: q }),
+          });
+          const data = await res.json();
+          this.history.push({ id: Date.now(), question: q, answer: data.answer });
+        } catch (e) {
+          this.history.push({ id: Date.now(), question: q, answer: 'Fout bij ophalen antwoord.' });
+        } finally {
+          this.loading = false;
+        }
+      },
+    };
+  }
+  </script>
+{% endif %}
+{% endblock %}

@@ -239,13 +239,31 @@ pages + `/api/journal` + `/api/insights`; CLI: `gdash journal today|log|insights
 *Done when:* engine demonstrably refuses under-powered claims (✅ tests); a real
 alcohol/HRV-style insight renders end-to-end after ~2 weeks of logging (⏳ needs real data).
 
-### Phase 6 — LLM Coach
+### Phase 6 — LLM Coach  ✅ (implemented, see commit log)
 Context assembler (7-day TSB, recovery, sleep deficit, recent load, journal — exact numbers, no
 free text from raw data); `openai` SDK → private endpoint (config: `LLM_BASE_URL`, `LLM_API_KEY`,
 `LLM_MODEL`); morning briefing injection; Signal Q&A with system prompt enforcing "never invent
 numbers; cite the values given; recommend at user's risk level".
-*Done when:* all model output is verifiably grounded (a test asserts no hallucinated figures
-against a fixture context); Q&A works end-to-end.
+
+**Status (implemented):** `app/coach/` — `context.py` (`build_context`: trailing
+`LLM_CONTEXT_WINDOW_DAYS` window of recovery/strain/TSB/sleep/RHR from the same `summary_for`
+read model the dashboard uses, today's journal responses, gated insights from `journal.insights`
+— same numbers everywhere, never re-derived); `grounding.py` (deterministic numeric-token check:
+every number in a reply must trace back to a number in the assembled context within rounding
+tolerance; small integers 0–3 exempted as harmless conversational counts); `client.py` (`openai`
+SDK → `LLM_BASE_URL`, system prompt enforces "only these numbers, only these correlations";
+ungrounded replies are dropped, not forwarded — `ask_coach` returns an explicit fallback message,
+`morning_commentary` returns `None` and the briefing silently omits the line). Gated behind
+`LLM_ENABLED` (explicit opt-in, mirrors `SIGNAL_ENABLED`) so a configured-but-disabled endpoint is
+never called. Signal `/ask <question>`; morning briefing gets an optional 🤖 commentary line
+(`LLM_MORNING_COMMENTARY`); web `/coach` chat page + `/api/coach/ask`; CLI `gdash coach ask`.
+21 new coach tests (grounding matches/rejects, context assembly, mocked-LLM ask/commentary
+grounded + ungrounded + disabled + error paths) + a manual end-to-end run against a real
+OpenAI-compatible HTTP server (grounded reply passes through verbatim; an ungrounded reply from
+the same server is correctly rejected). 134 app + 14 lib tests green, ruff clean.
+
+*Done when:* all model output is verifiably grounded (✅ `grounding.py` + tests); Q&A works
+end-to-end (✅ verified against a live OpenAI-compatible server, both Signal `/ask` and web).
 
 ### Phase 7 — Release Pipeline & Open-Source Polish
 GitHub Actions: lint+tests on push; multi-arch buildx build (`amd64`+`arm64`) → GHCR on tag;

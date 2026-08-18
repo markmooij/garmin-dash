@@ -49,7 +49,7 @@ def run_morning_report() -> None:
         logger.warning("SIGNAL_RECIPIENT unset — morning report skipped")
         return
     with session_scope() as session:
-        text = build_briefing(session)
+        text = build_briefing(session, with_commentary=True)
     try:
         messenger.send_message(recipient, text)
         logger.info("Morning report sent to %s", recipient)

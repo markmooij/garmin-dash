@@ -40,8 +40,15 @@ def _fmt(v: float | int | None, digits: int = 0) -> str:
     return "–" if v is None else f"{v:.{digits}f}"
 
 
-def build_briefing(session: Session, day: date | None = None) -> str:
-    """Full /summary briefing for `day` (default: today, local time)."""
+def build_briefing(session: Session, day: date | None = None, *, with_commentary: bool = False) -> str:
+    """Full /summary briefing for `day` (default: today, local time).
+
+    `with_commentary`: append a short grounded LLM coach line (Phase 6) when
+    LLM_ENABLED and LLM_MORNING_COMMENTARY are both true. Best-effort — a
+    disabled/unreachable coach or an ungrounded reply silently omits the
+    line rather than failing the briefing (the numeric report is the
+    contract; commentary is decoration).
+    """
     if day is None:
         day = datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
     data = summary_for(session, day)
@@ -108,6 +115,16 @@ def build_briefing(session: Session, day: date | None = None) -> str:
             dur_txt = f" · {dur // 60:.0f}min" if dur else ""
             lines.append(f"💪 {name}{dur_txt}")
 
+    if with_commentary:
+        settings = get_settings()
+        if settings.LLM_ENABLED and settings.LLM_MORNING_COMMENTARY:
+            from ..coach.client import morning_commentary
+
+            commentary = morning_commentary(session, day)
+            if commentary:
+                lines.append("─" * 22)
+                lines.append(f"🤖 {commentary}")
+
     return "\n".join(lines)
 
 
@@ -163,6 +180,7 @@ _COMMANDS: dict[str, str] = {
     "/log <factor> <j/n of aantal>": "dagboekfactor loggen",
     "/journal": "vandaag gelogde factoren",
     "/insights": "gated correlatie-inzichten",
+    "/ask <vraag>": "vraag de coach (LLM, alleen echte cijfers)",
     "/help": "deze lijst",
 }
 
@@ -186,6 +204,13 @@ def route_command(session: Session, text: str, day: date | None = None) -> str:
         return route_journal(session, day)
     if cmd == "/insights":
         return route_insights(session, day)
+    if cmd == "/ask":
+        from ..coach.client import ask_coach
+
+        question = text.strip()[len(cmd):].strip()
+        if not question:
+            return "Gebruik: /ask <vraag>, bijv: /ask hoe ging deze week?"
+        return ask_coach(session, question, day)
     if cmd in ("/help", "/start"):
         header = f"Garmin Dash — commando's (dag: {_dutch_date(day)})"
         body = "\n".join(f"{c} — {d}" for c, d in _COMMANDS.items())

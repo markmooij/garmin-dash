@@ -29,10 +29,19 @@ class Settings(BaseSettings):
     SIGNAL_API_HOST: str = "localhost"
     SIGNAL_API_PORT: int = 8080
 
-    # LLM (Phase 6)
+    # LLM (Phase 6) — private OpenAI-compatible endpoint only; explicit opt-in
+    # even when BASE_URL is set, matching the SIGNAL_ENABLED pattern (never
+    # call an external endpoint unless the user turns it on).
+    LLM_ENABLED: bool = False
     LLM_BASE_URL: str | None = None
     LLM_API_KEY: str | None = None
     LLM_MODEL: str = "gpt-4o"
+    LLM_MAX_TOKENS: int = 500
+    LLM_TEMPERATURE: float = 0.3
+    # Trailing window of computed_scores/journal fed to the coach as context
+    LLM_CONTEXT_WINDOW_DAYS: int = 7
+    # Append a short LLM commentary line to the Signal morning briefing
+    LLM_MORNING_COMMENTARY: bool = True
 
     # Signal Messenger (libs/signal_messenger)
     SIGNAL_CLI_API_URL: str = "http://localhost:8080"

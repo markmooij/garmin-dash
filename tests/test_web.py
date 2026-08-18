@@ -247,6 +247,25 @@ def test_api_insights_json(client):
     assert "window_days" in d
 
 
+# ── coach (Phase 6) ──────────────────────────────────────────────
+
+def test_coach_view_renders_disabled_state(client):
+    r = client.get("/coach")
+    assert r.status_code == 200
+    assert "uitgeschakeld" in r.text
+
+
+def test_coach_ask_disabled_returns_message(client):
+    r = client.post("/api/coach/ask", json={"question": "Hoe gaat het?"})
+    assert r.status_code == 200
+    assert "niet beschikbaar" in r.json()["answer"].lower()
+
+
+def test_coach_ask_empty_question_400(client):
+    r = client.post("/api/coach/ask", json={"question": ""})
+    assert r.status_code == 400
+
+
 
 
 

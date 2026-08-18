@@ -23,7 +23,10 @@ _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
 # sleep/RHR scores, effect sizes) always must trace back to the context.
 _SAFE_SMALL = {0.0, 1.0, 2.0, 3.0}
 
-_TOLERANCE = 0.6  # rounding slack (context mixes 0- and 1-decimal formatting)
+_TOLERANCE = 1.5  # allows whole-number rounding (71.4 → 71) and small
+# derivations (min/max/mean are provided by the context itself), while
+# still catching invented metrics (HRV/VO2max/weights) and out-of-range
+# claims (e.g. "herstel 85" when the week was 67–76).
 
 
 def _extract_numbers(text: str) -> list[float]:

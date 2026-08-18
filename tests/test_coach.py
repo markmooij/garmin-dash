@@ -22,7 +22,14 @@ DAY = date(2026, 8, 9)  # seeded day: recovery 71.5, strain 15.25, sleep 81, RHR
 def test_find_ungrounded_matches_within_tolerance():
     context = "herstel=72 (green), strain=15.2, TSB=-2.9"
     assert find_ungrounded("Je herstel is 72", context) == []
-    assert find_ungrounded("Strain van 15.3 vandaag", context) == []  # within 0.6 tolerance
+    assert find_ungrounded("Strain van 15.3 vandaag", context) == []  # rounding
+    assert find_ungrounded("Strain van 16.4 vandaag", context) == []  # within 1.5
+
+
+def test_find_ungrounded_flags_out_of_tolerance():
+    context = "herstel=72 (green), strain=15.2, TSB=-2.9"
+    assert 17.0 in find_ungrounded("Strain was 17 vandaag", context)  # 1.8 away
+    assert 65.0 in find_ungrounded("Herstel 65", context)  # 7 away
 
 
 def test_find_ungrounded_flags_invented_number():
@@ -85,7 +92,7 @@ def test_to_prompt_text_contains_numbers(seeded: Session):
     ctx = build_context(seeded, DAY, window_days=1)
     text = ctx.to_prompt_text()
     assert "71" in text or "72" in text  # recovery rounds in display, exact in dict
-    assert DAY.isoformat() in text
+    assert "vandaag" in text  # day labels, not ISO dates (keeps number space clean)
 
 
 def test_to_prompt_text_lists_journal_and_insights(seeded: Session):
@@ -100,25 +107,27 @@ def test_to_prompt_text_lists_journal_and_insights(seeded: Session):
 
 def test_build_context_aggregates_single_day(seeded: Session):
     ctx = build_context(seeded, DAY, window_days=1)
-    assert ctx.aggregates["recovery_score"] == 71.5
-    assert ctx.aggregates["strain"] == 15.25
-    assert ctx.aggregates["sleep_score"] == 81.0
-    assert ctx.aggregates["rhr"] == 45.0
-    assert ctx.aggregates["training_days"] == 1
-    assert ctx.aggregates["rest_days"] == 0
+    a = ctx.aggregates
+    assert a["recovery"] == {"mean": 71.5, "min": 71.5, "max": 71.5}
+    assert a["strain"]["mean"] == 15.25
+    assert a["sleep"]["mean"] == 81.0
+    assert a["sleep_duration_h"] == 7.0
+    assert a["rhr"] == {"mean": 45.0, "min": 45.0, "max": 45.0}
+    assert a["training_days"] == 1
+    assert a["rest_days"] == 0
 
 
 def test_build_context_aggregates_multi_day(seeded: Session):
     # 3-day window: only the seeded day has data, means = that day's values
     ctx = build_context(seeded, DAY, window_days=3)
-    assert ctx.aggregates["recovery_score"] == 71.5
+    assert ctx.aggregates["recovery"]["mean"] == 71.5
     assert ctx.aggregates["training_days"] == 1
     assert ctx.aggregates["rest_days"] == 0  # data-less days are not rest days
 
 
 def test_build_context_aggregates_empty_window(seeded: Session):
     ctx = build_context(seeded, date(2026, 8, 1), window_days=3)  # no data at all
-    assert ctx.aggregates["recovery_score"] is None
+    assert ctx.aggregates["recovery"] is None
     assert ctx.aggregates["training_days"] == 0
     assert "Weekoverzicht" not in ctx.to_prompt_text()
 
@@ -127,8 +136,24 @@ def test_to_prompt_text_includes_weekoverzicht(seeded: Session):
     ctx = build_context(seeded, DAY, window_days=1)
     text = ctx.to_prompt_text()
     assert "Weekoverzicht" in text
-    assert "gem. herstel=71.5" in text
-    assert "trainingsdagen=1" in text
+    assert "gem 72" in text  # 71.5 rounds half-to-even
+    assert "trainingsdagen 1" in text
+    assert "slaapduur 7.0u" in text
+
+
+def test_to_prompt_text_includes_activities(seeded: Session):
+    ctx = build_context(seeded, DAY, window_days=1)
+    text = ctx.to_prompt_text()
+    assert "Activiteiten" in text
+    assert "Kracht" in text
+    assert "60 min" in text
+
+
+def test_day_labels_use_weekdays_not_dates(seeded: Session):
+    ctx = build_context(seeded, DAY, window_days=1)
+    text = ctx.to_prompt_text()
+    assert DAY.isoformat() not in text
+    assert "2026" not in text
 
 
 # ── client.py (mocked LLM) ──────────────────────────────────────────────
@@ -201,10 +226,13 @@ def test_ask_coach_llm_error_returns_fallback(seeded: Session, monkeypatch):
 
 
 def test_ask_coach_weekly_question_grounded_via_aggregates(seeded: Session, monkeypatch):
-    # The model may answer a weekly question with the app-computed averages;
-    # those numbers ARE in the context (Weekoverzicht), so the reply passes.
+    # The model answers a weekly question with derived numbers (min, hours,
+    # minutes) — all of those ARE in the enriched context now, so it passes.
     client = FakeClient(
-        lambda kwargs: "Je week: gem. herstel 71.5, gem. strain 15.3, 1 trainingsdag."  # noqa: ARG005
+        lambda kwargs: (  # noqa: ARG005
+            "Je week: laagste herstel 71, gemiddeld 71.5, slaap 81 (7 uur), "
+            "1 training van 60 min. Prima week!"
+        )
     )
     monkeypatch.setattr("app.coach.client.get_client", lambda: client)
     reply = ask_coach(seeded, "Hoe was mijn week?", DAY)

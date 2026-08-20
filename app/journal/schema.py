@@ -4,9 +4,15 @@ Fixed vocabulary — not free-form — so the correlation engine has a stable
 key space to gate and label insights against. Free-form color lives in
 `tags` (list[str]) and `notes` (text), never used for correlation.
 
-Each factor is boolean ("did X happen today?") or a count (alcohol drinks).
-`/log` (Signal) and the web form both drive off this registry, so adding a
-question is a one-line change here.
+Each factor is boolean ("did X happen today?") or a count (alcohol drinks,
+stretch sessions). `/log` (Signal) and the web form both drive off this
+registry, so adding a question is a one-line change here.
+
+Order matters: the Signal evening reminder asks only
+`JOURNAL_PROMPT_FACTORS_PER_DAY` factors at a time and rotates through this
+list day by day (see `messaging.journal_commands.factors_for_day`), so every
+factor still gets asked regularly without a wall-of-text prompt. The full
+set is always available in the web form.
 """
 
 from __future__ import annotations
@@ -30,6 +36,10 @@ FACTORS: list[Factor] = [
     Factor("scherm_laat", "Scherm laat", "bool", "beeldscherm vlak voor slapen"),
     Factor("spierpijn", "Spierpijn", "bool", "spierpijn / DOMS"),
     Factor("ziek", "Ziek", "bool", "verkouden / ziekteverschijnselen"),
+    Factor("sauna", "Sauna", "bool", "sauna bezocht"),
+    Factor("magnesium", "Magnesium", "bool", "magnesium genomen"),
+    Factor("laat_gewerkt", "Laat gewerkt", "bool", "'s avonds doorgewerkt"),
+    Factor("stretchen", "Stretchen", "count", "aantal sessies (0/1/2)"),
 ]
 
 FACTORS_BY_KEY: dict[str, Factor] = {f.key: f for f in FACTORS}

@@ -41,7 +41,12 @@ uvicorn app.app:app --port 8123
 # → JSON:   /api/summary · /api/trends · /api/intraday · /api/journal · /api/insights
 
 # Journal (Phase 5) — web form, CLI, or Signal (/log alcohol 2)
+# The Signal evening reminder asks only JOURNAL_PROMPT_FACTORS_PER_DAY (3)
+# questions and rotates through the registry, prioritising the factors
+# furthest from clearing the insight gate; the web form always has all of them.
+# Set DASHBOARD_URL to link the full form from those messages.
 gdash journal log stress_hoog j   # log a factor for today
+gdash journal log stretchen 2     # count factors take a number
 gdash journal insights            # gated correlation insights
 
 # LLM coach (Phase 6) — needs LLM_ENABLED=true + LLM_BASE_URL in .env

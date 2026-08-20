@@ -97,7 +97,7 @@ def _outcome_values(session: Session, user_id: int, start: date, end: date) -> d
     return out
 
 
-def _is_exposed(value: object) -> bool | None:
+def is_exposed(value: object) -> bool | None:
     """Normalize a logged factor value to exposed(True)/baseline(False).
 
     Bool factors: value itself. Count factors (e.g. alcohol drinks):
@@ -153,7 +153,7 @@ def compute_insight(
     for entry in entries:
         if factor_key not in entry.responses:
             continue
-        is_exp = _is_exposed(entry.responses[factor_key])
+        is_exp = is_exposed(entry.responses[factor_key])
         if is_exp is None:
             continue
         outcome_day = entry.entry_date + timedelta(days=offset_days)

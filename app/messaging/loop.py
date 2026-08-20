@@ -7,7 +7,7 @@ import logging
 from ..db import session_scope
 from ..settings import get_settings
 from .briefing import build_briefing, route_command
-from .journal_commands import build_weekly_digest, log_prompt_text
+from .journal_commands import build_reminder_text, build_weekly_digest
 
 
 logger = logging.getLogger("garmin_dash.messaging.loop")
@@ -68,8 +68,10 @@ def run_journal_reminder() -> None:
     if not recipient:
         logger.warning("SIGNAL_RECIPIENT unset — journal reminder skipped")
         return
+    with session_scope() as session:
+        text = build_reminder_text(session)
     try:
-        messenger.send_message(recipient, log_prompt_text())
+        messenger.send_message(recipient, text)
         logger.info("Journal reminder sent to %s", recipient)
     except Exception:  # noqa: BLE001
         logger.exception("Journal reminder send failed")

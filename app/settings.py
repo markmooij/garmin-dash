@@ -103,6 +103,14 @@ class Settings(BaseSettings):
     # before an insight is reported at all — never report below threshold.
     JOURNAL_INSIGHT_MIN_SAMPLES: int = 5
     JOURNAL_INSIGHT_WINDOW_DAYS: int = 90
+    # The Signal evening reminder asks only this many factors per day and
+    # rotates through the registry, so the message stays short. The web form
+    # always shows all factors.
+    JOURNAL_PROMPT_FACTORS_PER_DAY: int = 3
+    # Public base URL of the dashboard, used to link the full journal form
+    # from Signal messages. Empty = no link shown (e.g. LAN-only setups that
+    # do not want a possibly-wrong URL in the message).
+    DASHBOARD_URL: str = ""
     # A journal entry logged for day D describes what happened during D
     # (typically logged in the evening); the behavioral effect shows up in
     # the *next* morning's recovery/sleep (the night from D to D+1).

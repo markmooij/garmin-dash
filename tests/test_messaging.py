@@ -7,9 +7,14 @@ from typing import TYPE_CHECKING
 
 from signal_messenger import Message, Messenger
 
-from app.journal.entries import get_entry
+from app.journal.entries import get_entry, upsert_response
+from app.journal.schema import FACTORS
 from app.messaging.briefing import build_briefing, route_command
-from app.messaging.journal_commands import build_weekly_digest, log_prompt_text
+from app.messaging.journal_commands import (
+    build_reminder_text,
+    build_weekly_digest,
+    log_prompt_text,
+)
 from app.messaging.loop import poll_commands, run_journal_reminder, run_weekly_digest
 
 
@@ -234,6 +239,10 @@ def test_log_prompt_text_lists_all_factors():
     text = log_prompt_text(DAY)
     assert "alcohol" in text
     assert "stress_hoog" in text
+    assert "sauna" in text
+    assert "magnesium" in text
+    assert "laat_gewerkt" in text
+    assert "stretchen" in text
 
 
 def test_build_weekly_digest_none_when_ungated(seeded: Session):
@@ -242,18 +251,34 @@ def test_build_weekly_digest_none_when_ungated(seeded: Session):
 
 # ── journal reminder / digest scheduler jobs ─────────────────────────
 
-def test_run_journal_reminder_sends_prompt(monkeypatch):
+def test_run_journal_reminder_sends_prompt(seeded: Session, monkeypatch):
     class _Settings:
         SIGNAL_RECIPIENT = "+31600000000"
 
     m = FakeMessenger()
     monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
     monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
     run_journal_reminder()
     assert len(m.sent) == 1
     recipient, text = m.sent[0]
     assert recipient == "+31600000000"
     assert "/log" in text
+
+
+def test_run_journal_reminder_asks_at_most_three_factors(seeded: Session, monkeypatch):
+    class _Settings:
+        SIGNAL_RECIPIENT = "+31600000000"
+
+    m = FakeMessenger()
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
+    run_journal_reminder()
+    _recipient, text = m.sent[0]
+    asked = [f.key for f in FACTORS if f"{f.key} —" in text]
+    assert len(asked) == 3
+    assert "3 van 11 vragen" in text
 
 
 def test_run_journal_reminder_noop_when_disabled(monkeypatch):
@@ -282,3 +307,33 @@ def _scope(seeded: Session):
         yield seeded
 
     return scope
+
+
+# ── dashboard link in Signal messages ────────────────────────────────
+
+def test_reminder_omits_link_when_url_unset(seeded: Session):
+    text = build_reminder_text(seeded, DAY)
+    assert "🔗" not in text  # DASHBOARD_URL defaults to "" — no placeholder URL
+
+
+def test_reminder_includes_journal_link_when_url_set(seeded: Session, monkeypatch):
+    class _Settings:
+        DASHBOARD_URL = "https://dash.example.com/"
+        TIMEZONE = "Europe/Amsterdam"
+        JOURNAL_PROMPT_FACTORS_PER_DAY = 3
+        JOURNAL_INSIGHT_WINDOW_DAYS = 90
+        JOURNAL_INSIGHT_MIN_SAMPLES = 5
+        JOURNAL_OUTCOME_OFFSET_DAYS = 1
+
+    monkeypatch.setattr("app.messaging.journal_commands.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.journal.rotation.get_settings", lambda: _Settings())
+    text = build_reminder_text(seeded, DAY)
+    assert "https://dash.example.com/journal" in text  # trailing slash normalised
+
+
+def test_reminder_says_done_when_all_logged(seeded: Session):
+    for factor in FACTORS:
+        upsert_response(seeded, DAY, factor.key, 1.0 if factor.kind == "count" else True)
+    seeded.commit()
+    text = build_reminder_text(seeded, DAY)
+    assert "Alles al gelogd" in text

@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from app.db.models import ComputedScore
 from app.journal.entries import entries_in_range, get_entry, upsert_entry, upsert_response
 from app.journal.insights import compute_all_insights, compute_insight
-from app.journal.schema import FACTORS_BY_KEY, parse_bool
+from app.journal.rotation import factors_for_day
+from app.journal.schema import FACTORS, FACTORS_BY_KEY, parse_bool
 
 
 if TYPE_CHECKING:
@@ -180,3 +181,64 @@ def test_compute_insight_missing_outcome_days_are_skipped(session: Session):
     session.commit()
     insight = compute_insight(session, "alcohol", "recovery_score", end=date(2026, 4, 20))
     assert insight is None  # baseline group has 0 usable outcomes < min_samples
+
+
+# ── rotation (Signal reminder asks a rotating subset) ─────────────────
+
+def test_new_factors_are_registered():
+    for key in ("sauna", "magnesium", "laat_gewerkt", "stretchen"):
+        assert key in FACTORS_BY_KEY
+    assert FACTORS_BY_KEY["sauna"].kind == "bool"
+    assert FACTORS_BY_KEY["magnesium"].kind == "bool"
+    assert FACTORS_BY_KEY["laat_gewerkt"].kind == "bool"
+    assert FACTORS_BY_KEY["stretchen"].kind == "count"  # 0/1/2 sessions
+
+
+def test_factors_for_day_returns_configured_count(session: Session):
+    picked = factors_for_day(session, date(2026, 4, 1))
+    assert len(picked) == 3  # JOURNAL_PROMPT_FACTORS_PER_DAY
+
+
+def test_factors_for_day_skips_already_logged(session: Session):
+    day = date(2026, 4, 1)
+    first = factors_for_day(session, day)
+    upsert_response(session, day, first[0].key, True)
+    session.commit()
+    again = factors_for_day(session, day)
+    assert first[0].key not in [f.key for f in again]
+
+
+def test_factors_for_day_empty_when_all_logged(session: Session):
+    day = date(2026, 4, 1)
+    for factor in FACTORS:
+        upsert_response(session, day, factor.key, 1.0 if factor.kind == "count" else True)
+    session.commit()
+    assert factors_for_day(session, day) == []
+
+
+def test_factors_for_day_rotates_across_days(session: Session):
+    """With no data, consecutive days must not ask the identical three."""
+    a = [f.key for f in factors_for_day(session, date(2026, 4, 1))]
+    b = [f.key for f in factors_for_day(session, date(2026, 4, 2))]
+    assert a != b
+
+
+def test_factors_for_day_covers_whole_registry_over_time(session: Session):
+    """Rotation must eventually ask every factor (no permanently starved key)."""
+    seen: set[str] = set()
+    for i in range(len(FACTORS)):
+        seen.update(f.key for f in factors_for_day(session, date(2026, 4, 1) + timedelta(days=i)))
+    assert seen == {f.key for f in FACTORS}
+
+
+def test_factors_for_day_prioritises_factors_furthest_from_gate(session: Session):
+    """A factor with balanced exposed/baseline days ranks below an unlogged one."""
+    day = date(2026, 4, 20)
+    # Give 'alcohol' a healthy both-sided history: it is closest to the gate.
+    for i in range(5):
+        upsert_response(session, day - timedelta(days=i + 1), "alcohol", 2.0)
+    for i in range(5, 10):
+        upsert_response(session, day - timedelta(days=i + 1), "alcohol", 0.0)
+    session.commit()
+    picked = [f.key for f in factors_for_day(session, day, count=len(FACTORS))]
+    assert picked[-1] == "alcohol"  # best-covered factor asked last

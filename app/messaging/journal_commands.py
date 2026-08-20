@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 
 from ..journal.entries import get_entry, upsert_response
 from ..journal.insights import compute_all_insights
-from ..journal.schema import FACTORS, FACTORS_BY_KEY, parse_bool
+from ..journal.rotation import factors_for_day
+from ..journal.schema import FACTORS, FACTORS_BY_KEY, Factor, parse_bool
 from ..settings import get_settings
 
 
@@ -36,21 +37,54 @@ def _today(day: date | None) -> date:
     return day if day is not None else datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
 
 
-def _factor_list_text() -> str:
-    lines = [f"{f.key} — {f.label} ({f.prompt})" for f in FACTORS]
+def _factor_list_text(factors: list[Factor] | None = None) -> str:
+    lines = [f"{f.key} — {f.label} ({f.prompt})" for f in (factors or FACTORS)]
     return "\n".join(lines)
 
 
-def log_prompt_text(day: date | None = None) -> str:
-    """The evening reminder message (scheduler job, also /journal with no args)."""
+def _dashboard_link(path: str = "/journal") -> str:
+    """'🔗 Alles invullen: <url>' line, or '' when DASHBOARD_URL is unset.
+
+    Kept out of the message entirely when unconfigured — a wrong/placeholder
+    URL in a daily message is worse than no link.
+    """
+    base = (get_settings().DASHBOARD_URL or "").rstrip("/")
+    if not base:
+        return ""
+    return f"\n\n🔗 Alle vragen invullen: {base}{path}"
+
+
+def _example_line(factor: Factor) -> str:
+    return f"/log {factor.key} {'2' if factor.kind == 'count' else 'j'}"
+
+
+def log_prompt_text(
+    day: date | None = None, factors: list[Factor] | None = None
+) -> str:
+    """The evening reminder message (scheduler job, also /journal with no args).
+
+    `factors` is the rotated subset chosen by `rotation.factors_for_day`;
+    when omitted (e.g. plain `/journal` without a session) the full registry
+    is listed. An empty list means everything is already logged today.
+    """
     day = _today(day)
-    return (
-        f"📓 Dagboek {_dutch_date(day)}\n"
-        "Log met: /log <factor> <j/n of aantal>\n\n"
-        f"{_factor_list_text()}\n\n"
-        "Voorbeeld: /log alcohol 2\n"
-        "Voorbeeld: /log stress_hoog j"
-    )
+    header = f"📓 Dagboek {_dutch_date(day)}"
+
+    if factors is not None and not factors:
+        return f"{header}\n✅ Alles al gelogd voor vandaag." + _dashboard_link()
+
+    shown = factors if factors is not None else FACTORS
+    lines = [
+        header,
+        "Log met: /log <factor> <j/n of aantal>",
+        "",
+        _factor_list_text(shown),
+        "",
+        f"Voorbeeld: {_example_line(shown[0])}",
+    ]
+    if factors is not None and len(FACTORS) > len(shown):
+        lines.append(f"({len(shown)} van {len(FACTORS)} vragen — morgen volgen de andere)")
+    return "\n".join(lines) + _dashboard_link()
 
 
 def route_log(session: Session, args: list[str], day: date | None = None) -> str:
@@ -80,18 +114,30 @@ def route_log(session: Session, args: list[str], day: date | None = None) -> str
 
 
 def route_journal(session: Session, day: date | None = None) -> str:
-    """/journal — show today's logged entry, or the prompt if nothing logged yet."""
+    """/journal — show today's logged entry, or the rotated prompt if empty."""
     day = _today(day)
     entry = get_entry(session, day)
     if entry is None or not entry.responses:
-        return log_prompt_text(day)
+        return log_prompt_text(day, factors_for_day(session, day))
     lines = [f"📓 Dagboek {_dutch_date(day)}"]
     for key, value in entry.responses.items():
         factor = FACTORS_BY_KEY.get(key)
         label = factor.label if factor else key
         shown = "ja" if value is True else "nee" if value is False else f"{value:g}"
         lines.append(f"  {label}: {shown}")
-    return "\n".join(lines)
+    # Still nudge the remaining questions — partial days are the norm.
+    remaining = factors_for_day(session, day)
+    if remaining:
+        lines.append("")
+        lines.append("Nog niet gelogd:")
+        lines.append(_factor_list_text(remaining))
+    return "\n".join(lines) + _dashboard_link()
+
+
+def build_reminder_text(session: Session, day: date | None = None) -> str:
+    """Evening reminder: only the rotated subset of factors for `day`."""
+    day = _today(day)
+    return log_prompt_text(day, factors_for_day(session, day))
 
 
 def route_insights(session: Session, day: date | None = None) -> str:
@@ -109,7 +155,7 @@ def route_insights(session: Session, day: date | None = None) -> str:
     lines = ["📈 Inzichten (laatste " + str(get_settings().JOURNAL_INSIGHT_WINDOW_DAYS) + "d)"]
     for insight in insights[:5]:
         lines.append("• " + insight.text())
-    return "\n".join(lines)
+    return "\n".join(lines) + _dashboard_link("/insights")
 
 
 def build_weekly_digest(session: Session, end: date | None = None) -> str | None:
@@ -121,10 +167,11 @@ def build_weekly_digest(session: Session, end: date | None = None) -> str | None
     lines = [f"📈 Wekelijkse inzichten — t/m {_dutch_date(end)}"]
     for insight in insights[:5]:
         lines.append("• " + insight.text())
-    return "\n".join(lines)
+    return "\n".join(lines) + _dashboard_link("/insights")
 
 
 __all__ = [
+    "build_reminder_text",
     "build_weekly_digest",
     "log_prompt_text",
     "route_insights",

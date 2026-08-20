@@ -236,6 +236,18 @@ silent until the sample gate clears); web: `/journal` (form + 30-day history) an
 pages + `/api/journal` + `/api/insights`; CLI: `gdash journal today|log|insights`.
 105 app + 14 lib tests green.
 
+**Update — 11 factors + rotating reminder:** registry extended to 11 (added `sauna`, `magnesium`,
+`laat_gewerkt` as bools and `stretchen` as a count). Listing all of them in a nightly Signal
+message would be a wall of text nobody answers, so `journal/rotation.py` picks only
+`JOURNAL_PROMPT_FACTORS_PER_DAY` (3) per reminder. Selection is *need-driven*, not a blind cycle:
+the insight gate needs ≥5 days both WITH and WITHOUT a factor, so the binding constraint per
+factor is `min(exposed_days, baseline_days)` — the factors furthest from clearing it are asked
+first (reusing the engine's own `is_exposed` so coverage counts exactly what the gate counts).
+Ties rotate by date, factors already logged that day are skipped, and every factor is guaranteed
+to come up over time (tested). Signal messages link the full form via `DASHBOARD_URL` (omitted
+entirely when unset — a wrong URL in a daily message is worse than none); the web form still
+shows all 11.
+
 *Done when:* engine demonstrably refuses under-powered claims (✅ tests); a real
 alcohol/HRV-style insight renders end-to-end after ~2 weeks of logging (⏳ needs real data).
 

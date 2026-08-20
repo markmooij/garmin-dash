@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.models import IntradaySeries
-from app.web import query
+from app.web import explanation, query
 
 
 if TYPE_CHECKING:
@@ -266,9 +266,47 @@ def test_coach_ask_empty_question_400(client):
     assert r.status_code == 400
 
 
+def test_explanation_view_renders_all_metric_sections(client):
+    r = client.get("/uitleg")
+    assert r.status_code == 200
+    for needle in (
+        "Wat is het?",
+        "Wat doet het?",
+        "Hoe ontwikkelt het zich overdag?",
+        "Herstel",
+        "Strain",
+        "TSB",
+        "Dagboek",
+        "Inzichten",
+    ):
+        assert needle in r.text
+
+
+def test_explanation_link_in_nav(client):
+    r = client.get("/")
+    assert 'href="/uitleg"' in r.text
 
 
 
 
 
 
+
+
+
+
+def test_explanation_covers_every_dashboard_metric():
+    """Guard against a metric being added to the dashboard but not documented."""
+    names = [m.name for s in explanation.SECTIONS for m in s.metrics]
+    for expected in ("Herstel", "Strain", "Slaap", "TSB", "Stress", "Body Battery"):
+        assert any(expected in name for name in names), f"undocumented metric: {expected}"
+
+
+def test_explanation_entries_are_complete():
+    """Every documented metric must answer all three questions, non-trivially."""
+    for section in explanation.SECTIONS:
+        assert section.metrics, f"empty section: {section.title}"
+        for m in section.metrics:
+            assert len(m.what) > 30, m.name
+            assert len(m.does) > 30, m.name
+            assert len(m.develops) > 30, m.name

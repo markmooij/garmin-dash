@@ -14,7 +14,7 @@ from ..db import get_session
 from ..journal.entries import upsert_entry
 from ..journal.schema import FACTORS_BY_KEY
 from ..settings import get_settings
-from . import query
+from . import explanation, query
 
 
 if TYPE_CHECKING:
@@ -145,6 +145,14 @@ def insights_view(
     finally:
         db.close()
     return templates.TemplateResponse(request, "insights.html", {"data": data})
+
+
+@router.get("/uitleg")
+def explanation_view(request: Request):
+    """GET /uitleg — what each metric is, does, and how it develops."""
+    return templates.TemplateResponse(
+        request, "explanation.html", {"data": explanation.build_context()}
+    )
 
 
 @router.get("/coach")

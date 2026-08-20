@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Uitleg · Garmin Dash{% endblock %}
+{% block nav_explanation %}bg-zinc-800 text-zinc-100{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-xl font-semibold">Uitleg</h1>
+  <p class="text-sm text-zinc-500 mt-1">
+    Wat elke metriek betekent, wat hij doet en hoe je hem in de loop van de dag
+    kunt zien veranderen.
+  </p>
+</div>
+
+{% for section in data.sections %}
+  <section class="mb-8">
+    <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">{{ section.title }}</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% for m in section.metrics %}
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-zinc-100">{{ m.name }}</h3>
+            {% if m.range %}
+              <span class="text-[10px] uppercase tracking-wide text-zinc-500">{{ m.range }}</span>
+            {% endif %}
+          </div>
+          <dl class="mt-3 space-y-3 text-[13px] leading-relaxed">
+            <div>
+              <dt class="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-0.5">Wat is het?</dt>
+              <dd class="text-zinc-300">{{ m.what }}</dd>
+            </div>
+            <div>
+              <dt class="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-0.5">Wat doet het?</dt>
+              <dd class="text-zinc-300">{{ m.does }}</dd>
+            </div>
+            <div>
+              <dt class="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-0.5">Hoe ontwikkelt het zich overdag?</dt>
+              <dd class="text-zinc-300">{{ m.develops }}</dd>
+            </div>
+          </dl>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endfor %}
+{% endblock %}

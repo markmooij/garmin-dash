@@ -278,7 +278,8 @@ def test_run_journal_reminder_asks_at_most_three_factors(seeded: Session, monkey
     _recipient, text = m.sent[0]
     asked = [f.key for f in FACTORS if f"{f.key} —" in text]
     assert len(asked) == 3
-    assert "3 van 11 vragen" in text
+    assert "11" not in text  # no nag line — the message stays minimal
+    assert "Antwoord: /log" in text
 
 
 def test_run_journal_reminder_noop_when_disabled(monkeypatch):

@@ -38,30 +38,37 @@ def _today(day: date | None) -> date:
 
 
 def _factor_list_text(factors: list[Factor] | None = None) -> str:
-    lines = [f"{f.key} — {f.label} ({f.prompt})" for f in (factors or FACTORS)]
+    """Numbered list of the factors to answer, key + short prompt.
+
+    The key is what the user types after /log, so it stays visible; the
+    verbose label is reserved for /journal replies and the web form.
+    """
+    lines = [f"{i}. {f.key} — {f.prompt}" for i, f in enumerate(factors or FACTORS, 1)]
     return "\n".join(lines)
 
 
 def _dashboard_link(path: str = "/journal") -> str:
-    """'🔗 Alles invullen: <url>' line, or '' when DASHBOARD_URL is unset.
+    """'🔗 Meer invullen: <url>' line, or '' when DASHBOARD_URL is unset.
 
     Kept out of the message entirely when unconfigured — a wrong/placeholder
-    URL in a daily message is worse than no link.
+    URL in a daily message is worse than no link. A startup warning in
+    `web/__init__.py` reminds operators to set DASHBOARD_URL when Signal is
+    enabled.
     """
     base = (get_settings().DASHBOARD_URL or "").rstrip("/")
     if not base:
         return ""
-    return f"\n\n🔗 Alle vragen invullen: {base}{path}"
-
-
-def _example_line(factor: Factor) -> str:
-    return f"/log {factor.key} {'2' if factor.kind == 'count' else 'j'}"
+    return f"\n\n🔗 Meer invullen op het dashboard: {base}{path}"
 
 
 def log_prompt_text(
     day: date | None = None, factors: list[Factor] | None = None
 ) -> str:
     """The evening reminder message (scheduler job, also /journal with no args).
+
+    Deliberately minimal — the user asked not to be bothered with a wall of
+    text: at most `JOURNAL_PROMPT_FACTORS_PER_DAY` (3) questions, one
+    instruction line, and a link to the dashboard for everything else.
 
     `factors` is the rotated subset chosen by `rotation.factors_for_day`;
     when omitted (e.g. plain `/journal` without a session) the full registry
@@ -74,16 +81,7 @@ def log_prompt_text(
         return f"{header}\n✅ Alles al gelogd voor vandaag." + _dashboard_link()
 
     shown = factors if factors is not None else FACTORS
-    lines = [
-        header,
-        "Log met: /log <factor> <j/n of aantal>",
-        "",
-        _factor_list_text(shown),
-        "",
-        f"Voorbeeld: {_example_line(shown[0])}",
-    ]
-    if factors is not None and len(FACTORS) > len(shown):
-        lines.append(f"({len(shown)} van {len(FACTORS)} vragen — morgen volgen de andere)")
+    lines = [header, "", _factor_list_text(shown), "", "Antwoord: /log <factor> <j/n of aantal>"]
     return "\n".join(lines) + _dashboard_link()
 
 

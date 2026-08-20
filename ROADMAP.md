@@ -248,6 +248,18 @@ to come up over time (tested). Signal messages link the full form via `DASHBOARD
 entirely when unset — a wrong URL in a daily message is worse than none); the web form still
 shows all 11.
 
+**Update — minimal reminder + Uitleg page:** the nightly Signal message was trimmed further on
+user request ("I don't want to be bothered with too many tasks/messages through Signal"): no
+labels, no "x van y" nag line — just the date, a numbered list of at most 3 factor keys with their
+short prompt, one `Antwoord: /log <factor> <j/n of aantal>` line, and the dashboard link. Anything
+beyond the 3 questions is deliberately pushed to the web form rather than to more messages. A
+startup warning fires when `SIGNAL_ENABLED=true` while `DASHBOARD_URL` is unset, since that is
+exactly the misconfiguration that silently drops the link. New `/uitleg` page (nav tab "Uitleg",
+`web/explanation.py` + `explanation.html`) documents all 12 metrics in three sections, each
+answering *what is it / what does it do / how does it develop during the day*, written against the
+actual implementations in `metrics/`. Tests assert every dashboard metric is documented and that
+no entry is left stubbed.
+
 *Done when:* engine demonstrably refuses under-powered claims (✅ tests); a real
 alcohol/HRV-style insight renders end-to-end after ~2 weeks of logging (⏳ needs real data).
 

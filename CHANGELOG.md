@@ -1,0 +1,47 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- GitHub Actions CI: lint + tests on push/PR, multi-arch image build to GHCR on
+  version tags.
+- `SECURITY.md` with the project's security policy.
+
+## [0.1.0] — 2026-08-20
+
+### Added
+- **Phase 0–3**: Garmin Connect ingestion (garminconnect + garth MFA auth, FIT
+  parsing, idempotent upserts, backfill), metrics engine (Whoop-style Recovery
+  0–100 with HRV/RHR/sleep/stress weights and Venu-2 HRV fallback, Strain 0–21
+  with personal 90-day calibration, ATL/CTL/TSB), and the single-container web
+  dashboard (FastAPI + Jinja2 + Alpine.js + Tailwind + uPlot).
+- **Phase 4**: Signal Messenger integration via a standalone reusable
+  `libs/signal_messenger` package; morning readiness briefing, command routing
+  (`/summary`, `/strain`, `/recovery`, `/sleep`, …), journal reminder and
+  weekly digest scheduler jobs.
+- **Phase 5**: behavioral journal (11 pre-registered factors, bool/count kinds)
+  with a gated correlation-insight engine (≥5/≥5 samples, effect size +
+  direction, never p-values); rotating Signal reminder that asks at most 3
+  factors per day, prioritising those furthest from the insight gate; web
+  journal form + insights page.
+- **Phase 6**: LLM coach against a private OpenAI-compatible endpoint — the app
+  computes every aggregate, the model only words them, and a deterministic
+  grounding check drops any reply that cites numbers not in the context.
+  Signal `/ask`, web `/coach` chat, CLI `gdash coach ask`.
+- **Uitleg page** (`/uitleg`): explains every dashboard metric — what it is,
+  what it does, and how it is expected to develop during the day.
+- Raspberry Pi deployment: multi-arch Docker images, `docker-compose.prod.yml`
+  with `app` + `scheduler`, flock-serialized migrations, PUID/PGID ownership
+  fix in the entrypoint.
+
+### Security
+- Secrets never committed: `.env`/tokens/DB are gitignored and excluded from
+  the Docker build context; example env files ship with placeholders only.
+- Dashboard is LAN-bound by default; Signal and LLM integrations are explicit
+  opt-ins (`SIGNAL_ENABLED`, `LLM_ENABLED`).
+
+[0.1.0]: https://github.com/yourname/garmin-dash/releases/tag/v0.1.0

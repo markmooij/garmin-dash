@@ -1,10 +1,12 @@
-# Deployment Guide — Raspberry Pi (private registry)
+# Deployment Guide — Raspberry Pi
 
 Goal: run garmin-dash **indefinitely** on a Raspberry Pi inside your network,
 with a repeatable update loop. One dev machine builds images (amd64 + arm64),
-pushes them to your private registry at **`ghcr.io/yourname`**, and the Pi
-pulls + runs. Push/pull access is already network/ACL-managed — no
-`docker login` step is required in the normal flow.
+pushes them to a container registry (e.g. **GitHub Container Registry**,
+`ghcr.io/<you>`), and the Pi pulls + runs. Replace `<you>` with your own
+registry namespace throughout this guide. For a public project, GHCR is
+free and the Pi can pull public images without a login; pushing from your
+dev machine needs a one-time `docker login ghcr.io` (see step 1).
 
 ```
 ┌─────────────────────────┐          ┌──────────────────────────────┐
@@ -37,11 +39,11 @@ runs at boot so a fresh volume self-initializes (schema + default user).
 ## 0. Prerequisites
 
 - **Dev machine**: Docker with buildx (`docker buildx version`), network
-  access to `ghcr.io/yourname` with push rights (already granted).
+  access to `ghcr.io/<you>` with push rights (authenticate once, step 1).
 - **Raspberry Pi**: Raspberry Pi OS (64-bit, Bookworm or newer) with Docker
   Engine + Compose v2 (see step 4 for the install commands), reachable via
-  SSH from your dev machine, network access to `ghcr.io/yourname` with
-  pull rights (already granted).
+  SSH from your dev machine, network access to `ghcr.io/<you>` (public
+  images need no pull auth).
 
 ---
 
@@ -53,10 +55,14 @@ Enable cross-arch emulation once (needed for the arm64 build on x86):
 docker run --privileged --rm tonistiigi/binfmt --install all
 ```
 
-That's it — no registry login needed since `ghcr.io/yourname` access is
-already managed. `docker buildx ls` should show a builder; the script
-creates one (`garmin-builder`, docker-container driver) automatically on
-first run.
+Authenticate to the registry once (GHCR example):
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <you> --password-stdin
+```
+
+`docker buildx ls` should show a builder; the script creates one
+(`garmin-builder`, docker-container driver) automatically on first run.
 
 ## 2. Dev machine — build & push (repeatable)
 
@@ -150,9 +156,8 @@ cd ~/garmin-dash
 docker compose -f docker-compose.prod.yml pull
 ```
 
-No login needed — pull access to `ghcr.io/yourname` is already granted on
-the Pi's network. If your registry ever requires auth, see the
-troubleshooting table below.
+Public GHCR images pull without a login. If your registry is private or
+auth-gated, see the troubleshooting table below.
 
 ## 7. Pi — start (and keep running)
 
@@ -187,7 +192,7 @@ Both containers restart automatically after a reboot or crash.
 
 ```bash
 # ── dev machine ──────────────────────────────────────────────────────
-cd ~/Projects/garmin-dash/docker
+cd <repo>/docker
 ./build-push.sh                        # build+push :latest (or TAG=vX.Y.Z)
 
 # ── Pi ──────────────────────────────────────────────────────────────

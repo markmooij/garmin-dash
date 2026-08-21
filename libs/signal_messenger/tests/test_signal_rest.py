@@ -193,7 +193,7 @@ def test_receive_messages_real_captured_payload():
                 "source": "+31600000000",
                 "sourceNumber": "+31600000000",
                 "sourceUuid": "11111111-2222-3333-4444-555555555555",
-                "sourceName": "Mark Mooij",
+                "sourceName": "Test User",
                 "sourceDevice": 2,
                 "timestamp": 1786997164918,
                 "serverReceivedTimestamp": 1786997165130,

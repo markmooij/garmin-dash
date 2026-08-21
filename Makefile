@@ -2,12 +2,13 @@
 
 # Python 3.12 virtual environment (using uv)
 VENV = .venv
-UV = /home/mark/.local/bin/uv
+# Override with UV=/path/to/uv if uv is not on your PATH
+UV ?= uv
 
 # Docker
 DOCKER = docker
 
-# Registry defaults (override on the command line)
+# Registry defaults (override on the command line, e.g. REGISTRY=ghcr.io/<you>)
 REGISTRY ?= ghcr.io/yourname
 APP_NAME ?= garmin-dash
 TAG ?= latest
@@ -31,7 +32,7 @@ help:
 	@echo ""
 	@echo "  compose-dev      Start dev containers (app + scheduler + signal-api profile)"
 	@echo "  compose-prod     Start prod containers (RPi, see DEPLOY.md)"
-	@echo "  docker-build-push Build multi-arch image and push to ghcr.io/yourname (no login needed)"
+	@echo "  docker-build-push Build multi-arch image and push to $(REGISTRY)/$(APP_NAME) (set REGISTRY first)"
 
 setup:
 	$(UV) venv --clear $(VENV)
@@ -82,8 +83,8 @@ report:
 	$(UV) run gdash report $(ARGS)
 
 # Docker (see DEPLOY.md for the full Pi deployment walkthrough)
-# Push access to ghcr.io/yourname is already managed — no login needed.
-# Only set REGISTRY_USER/REGISTRY_TOKEN if that ever changes.
+# Set REGISTRY to your own container registry (e.g. REGISTRY=ghcr.io/<you>);
+# GHCR needs a login: set REGISTRY_USER/REGISTRY_TOKEN or run `docker login ghcr.io`.
 # Usage: make docker-build-push [TAG=v0.1.0]
 docker-build-push:
 	@cd docker && REGISTRY=$(REGISTRY) APP_NAME=$(APP_NAME) TAG=$(TAG) ./build-push.sh

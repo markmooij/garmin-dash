@@ -204,20 +204,20 @@ Verified: all routes < 100 ms on localhost, 52 tests green, ruff+mypy clean.
 *Done when:* "how am I / what happened" answerable from localhost in <3 s (✅ ~70 ms);
 page structure extensible (✅ partial + route per card).
 
-### Phase 4 — Signal Messenger + Morning Report
+### Phase 4 — Signal Messenger + Morning Report  ✅ (implemented, see commit log)
 `libs/signal_messenger` package (interface + signal-cli-rest-api client, own tests, own README);
 wire into compose (dev + prod profiles); morning readiness briefing (07:30, configurable);
 command parsing (`/summary`, `/strain`, `/recovery`, `/sleep`) routed through the REST API.
 *Done when:* report arrives unattended daily; commands answer from the Pi over the weekend;
 the package builds/installs standalone (`pip install ./libs/signal_messenger` in a scratch venv).
 
-**Status (prepared):** `libs/signal_messenger` complete (Messenger ABC + SignalRestClient,
-7 unit tests, standalone install verified in a scratch venv); app-side briefing + command
+**Status (implemented):** `libs/signal_messenger` complete (Messenger ABC + SignalRestClient,
+14 unit tests, standalone install verified in a scratch venv); app-side briefing + command
 router (`app/messaging/`, tested against a fake messenger); scheduler jobs (morning report
 at `SIGNAL_REPORT_TIME`, command poll every `SIGNAL_COMMAND_POLL_MINUTES`) — all gated by
-`SIGNAL_ENABLED=false`; compose `signal-api` service present in both profiles.
-**Remaining:** provision the number (see open item below), set `SIGNAL_ENABLED=true` +
-`SIGNAL_ACCOUNT`/`SIGNAL_RECIPIENT`, start the scheduler, one unattended end-to-end run.
+`SIGNAL_ENABLED`; compose `signal-api` service present in both profiles. A provisioned number
+is linked via the `signal-api` container and the journal reminder, command replies and the
+weekly digest run unattended on the Pi.
 
 ### Phase 5 — Journal & Correlation Insights  ✅ (implemented, see commit log)
 Evening survey (Signal-first, web fallback); pre-registered questions + free tags; gated insight
@@ -319,13 +319,11 @@ confirmed; CHANGELOG; docs for the signal_messenger package.
 
 ## Open Items (small, non-blocking)
 
-- **License**: MIT placeholder committed; swap to AGPL-3.0 if you prefer copyleft for the
-  self-hosted-SaaS scenario — one-line change.
-- **Registry**: GHCR assumed for `docker/build-push.sh`; swap `REGISTRY` env for a self-hosted
-  `registry:2`/Harbor if preferred.
-- **Signal number**: decide SIM-vs-secondary-device-linking before Phase 4 setup.
-  *Recommendation: QR secondary-device link* — no extra SIM/costs; provisioning is a
-  one-time scan of `/v1/qrcodelink` (see `libs/signal_messenger/README.md`); caveat: the
-  phone's Signal app must keep running. The SIM route needs a spare SIM + SMS code.
-- **LLM endpoint**: confirm it speaks the OpenAI chat-completions contract (vLLM, llama.cpp
-  server, or a proxy all do).
+- **License**: MIT is committed and intentional; swap to AGPL-3.0 if you prefer copyleft for
+  the self-hosted-SaaS scenario — one-line change.
+- **Registry**: GHCR is the documented default (`REGISTRY=ghcr.io/<you>`); swap `REGISTRY`
+  env for a self-hosted `registry:2`/Harbor if preferred.
+- **CI**: GitHub Actions (lint + tests on push, multi-arch image build on tag) is the
+  remaining Phase 7 item — see `ROADMAP.md` Phase 7.
+- **Screenshots**: README would benefit from a couple of dashboard screenshots before the
+  public announcement.

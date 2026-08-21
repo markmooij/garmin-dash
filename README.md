@@ -62,9 +62,9 @@ make compose-dev
 ## Deployment (Raspberry Pi)
 
 See [DEPLOY.md](DEPLOY.md) for the full walkthrough: build a multi-arch image
-(amd64 + arm64) on your dev machine, push to the private registry
-(`ghcr.io/yourname`), and run `app` + `scheduler` containers on the Pi
-with `restart: unless-stopped`.
+(amd64 + arm64) on your dev machine, push to a container registry (e.g.
+GHCR — set `REGISTRY=ghcr.io/<you>` when building), and run `app` +
+`scheduler` containers on the Pi with `restart: unless-stopped`.
 
 ```bash
 # dev machine — build & push (one command, repeatable, no login needed)
@@ -86,10 +86,10 @@ curl http://localhost:8000/healthz   # → {"status":"ok"}
 ├─────────────────────────────────────────────────────────┤
 │  • ingestion/     APScheduler → garminconnect           │
 │  • metrics/       Strain, Recovery, ATL/CTL/TSB         │
-│  • insights/      Journal correlation engine            │
+│  • journal/       Factor registry + gated insights      │
 │  • coach/         LLM context assembler + OpenAI SDK    │
-│  • api/           JSON REST + Signal commands           │
-│  • web/           Server-rendered dashboard             │
+│  • messaging/     Signal commands + briefings           │
+│  • web/           Server-rendered dashboard + JSON API  │
 │  • db/            SQLite (WAL)                          │
 ├─────────────────────────────────────────────────────────┤
 │  • libs/signal_messenger (standalone, reusable)         │

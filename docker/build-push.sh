@@ -1,16 +1,16 @@
 #!/bin/bash
-# Build multi-arch image (amd64 + arm64) and push to the private registry.
-# Usage: ./build-push.sh                    (pushes ghcr.io/yourname/garmin-dash:latest)
-#   cd docker && ./build-push.sh
+# Build multi-arch image (amd64 + arm64) and push to a container registry.
+# Usage: REGISTRY=ghcr.io/<you> ./build-push.sh   (pushes ghcr.io/<you>/garmin-dash:latest)
+#   cd docker && REGISTRY=ghcr.io/<you> ./build-push.sh
 #   TAG=v0.2.0 ./build-push.sh               (also tags/pushes a version tag)
 #
 # Requirements on the dev machine:
 #   - docker with buildx (docker buildx version)
 #   - qemu/binfmt for cross-arch builds:
 #       docker run --privileged --rm tonistiigi/binfmt --install all
-#   - push access to ghcr.io/yourname is already network/ACL-managed —
-#     no `docker login` needed. If that ever changes, set REGISTRY_USER/
-#     REGISTRY_TOKEN and this script will log in first.
+#   - push access to the registry. For GHCR, authenticate first:
+#       echo "$GITHUB_TOKEN" | docker login ghcr.io -u <you> --password-stdin
+#     or set REGISTRY_USER/REGISTRY_TOKEN and this script will log in.
 
 set -euo pipefail
 
@@ -33,8 +33,8 @@ else
   docker buildx use garmin-builder
 fi
 
-# 2. Optional login — only needed if REGISTRY_USER/REGISTRY_TOKEN are set.
-#    ghcr.io/yourname access is already managed, so this is a no-op by default.
+# 2. Optional login — only needed if REGISTRY_USER/REGISTRY_TOKEN are set
+#    (or if you did not `docker login` already).
 if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_TOKEN:-}" ]]; then
   echo "🔑 Logging in to ${REGISTRY} as ${REGISTRY_USER}..."
   echo "${REGISTRY_TOKEN}" | docker login "${REGISTRY}" -u "${REGISTRY_USER}" --password-stdin

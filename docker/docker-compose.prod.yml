@@ -58,10 +58,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data/signal:/home/user/.signal
+      # signal-cli stores its data in /home/.local/share/signal-cli
+      # (SIGNAL_CLI_CONFIG_DIR default) — this is what must persist.
+      - ./data/signal:/home/.local/share/signal-cli
     environment:
       - SIGNAL_CLI_BIN=/usr/local/bin/signal-cli
-      - SIGNAL_CLI_USERDATA=/home/user/.signal
     networks:
       - garmin-dash
 

@@ -9,7 +9,7 @@ UV ?= uv
 DOCKER = docker
 
 # Registry defaults (override on the command line, e.g. REGISTRY=ghcr.io/<you>)
-REGISTRY ?= ghcr.io/yourname
+REGISTRY ?= dev6.ai-applied.nl
 APP_NAME ?= garmin-dash
 TAG ?= latest
 
@@ -83,8 +83,9 @@ report:
 	$(UV) run gdash report $(ARGS)
 
 # Docker (see DEPLOY.md for the full Pi deployment walkthrough)
-# Set REGISTRY to your own container registry (e.g. REGISTRY=ghcr.io/<you>);
-# GHCR needs a login: set REGISTRY_USER/REGISTRY_TOKEN or run `docker login ghcr.io`.
+# Set REGISTRY to your own container registry (default dev6.ai-applied.nl,
+# e.g. REGISTRY=ghcr.io/<you>); GHCR needs a login: set REGISTRY_USER/REGISTRY_TOKEN
+# or run `docker login ghcr.io`.
 # Usage: make docker-build-push [TAG=v0.1.0]
 docker-build-push:
 	@cd docker && REGISTRY=$(REGISTRY) APP_NAME=$(APP_NAME) TAG=$(TAG) ./build-push.sh

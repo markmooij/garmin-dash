@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build multi-arch image (amd64 + arm64) and push to a container registry.
-# Usage: REGISTRY=ghcr.io/<you> ./build-push.sh   (pushes ghcr.io/<you>/garmin-dash:latest)
-#   cd docker && REGISTRY=ghcr.io/<you> ./build-push.sh
+# Usage: ./build-push.sh                        (pushes dev6.ai-applied.nl/garmin-dash:latest)
+#   cd docker && ./build-push.sh
+#   REGISTRY=ghcr.io/<you> ./build-push.sh      (override the registry)
 #   TAG=v0.2.0 ./build-push.sh               (also tags/pushes a version tag)
 #
 # Requirements on the dev machine:
@@ -16,13 +17,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."   # repo root = build context
 
-REGISTRY="${REGISTRY:-ghcr.io/yourname}"
+REGISTRY="${REGISTRY:-dev6.ai-applied.nl}"
 APP_NAME="${APP_NAME:-garmin-dash}"
 TAG="${TAG:-latest}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 IMAGE="${REGISTRY}/${APP_NAME}"
 
 echo "📦 ${IMAGE}:${TAG}  (${PLATFORMS})"
+echo "   (set REGISTRY=... to override the default ${REGISTRY})"
 echo
 
 # 1. Ensure a docker-container builder exists (needed for multi-platform --push)

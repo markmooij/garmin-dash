@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from ..settings import get_settings
 from .entries import entries_in_range, get_entry
 from .insights import is_exposed
-from .schema import FACTORS, Factor
+from .schema import Factor, get_factors
 
 
 if TYPE_CHECKING:
@@ -42,9 +42,10 @@ def _coverage(session: Session, day: date, user_id: int) -> dict[str, int]:
     settings = get_settings()
     start = day - timedelta(days=settings.JOURNAL_INSIGHT_WINDOW_DAYS)
     entries = entries_in_range(session, start, day, user_id=user_id)
+    factors = get_factors(session, user_id=user_id)
 
-    exposed: dict[str, int] = {f.key: 0 for f in FACTORS}
-    baseline: dict[str, int] = {f.key: 0 for f in FACTORS}
+    exposed: dict[str, int] = {f.key: 0 for f in factors}
+    baseline: dict[str, int] = {f.key: 0 for f in factors}
     for entry in entries:
         for key, value in (entry.responses or {}).items():
             if key not in exposed:
@@ -80,13 +81,14 @@ def factors_for_day(
 
     entry = get_entry(session, day, user_id=user_id)
     answered = set((entry.responses or {}).keys()) if entry else set()
-    candidates = [f for f in FACTORS if f.key not in answered]
+    factors = get_factors(session, user_id=user_id)
+    candidates = [f for f in factors if f.key not in answered]
     if not candidates:
         return []
 
     coverage = _coverage(session, day, user_id)
-    n = len(FACTORS)
-    index_of = {f.key: i for i, f in enumerate(FACTORS)}
+    n = len(factors)
+    index_of = {f.key: i for i, f in enumerate(factors)}
     offset = day.toordinal()
 
     def sort_key(f: Factor) -> tuple[int, int]:

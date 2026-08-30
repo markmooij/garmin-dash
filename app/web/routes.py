@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from ..db import get_session
 from ..journal.entries import upsert_entry
-from ..journal.schema import FACTORS_BY_KEY
+from ..journal.schema import create_factor, delete_factor, get_factors, update_factor
 from ..settings import get_settings
 from . import explanation, query
 
@@ -102,7 +102,7 @@ async def journal_save(
     request: Request,
     db: Session = Depends(_db),  # noqa: B008
 ):
-    """Save the journal form: one field per registered factor, prefixed 'f_'.
+    """Save the journal form: one field per active factor, prefixed 'f_'.
 
     Checkboxes only submit when checked (bool factors default False when
     absent from the form); count factors are parsed as float, blank/invalid
@@ -114,16 +114,16 @@ async def journal_save(
     notes = str(form.get("notes") or "") or None
 
     responses: dict = {}
-    for key, factor in FACTORS_BY_KEY.items():
-        field = f"f_{key}"
+    for factor in get_factors(db):
+        field = f"f_{factor.key}"
         if factor.kind == "bool":
-            responses[key] = field in form
+            responses[factor.key] = field in form
         else:
             raw = form.get(field)
             if raw in (None, ""):
                 continue
             try:
-                responses[key] = float(str(raw))
+                responses[factor.key] = float(str(raw))
             except ValueError:
                 continue
 
@@ -139,9 +139,13 @@ async def journal_save(
 def insights_view(
     request: Request,
     db: Session = Depends(_db),  # noqa: B008
+    sort: str = "effect",
+    dir: str = "desc",
 ):
+    sort = sort if sort in ("effect", "date", "alphabet") else "effect"
+    direction = dir if dir in ("asc", "desc") else "desc"
     try:
-        data = query.insights_for(db)
+        data = query.insights_for(db, sort=sort, direction=direction)
     finally:
         db.close()
     return templates.TemplateResponse(request, "insights.html", {"data": data})
@@ -201,6 +205,108 @@ def intraday_view(
 
 
 # ── JSON API (extensibility contract: new card ≈ partial + route) ───────
+
+@router.get("/journal/factors")
+def factors_view(
+    request: Request,
+    db: Session = Depends(_db),  # noqa: B008
+):
+    """Factor management: add / edit / remove journal questions."""
+    try:
+        data = query.factors_for(db)
+    finally:
+        db.close()
+    return templates.TemplateResponse(request, "factors.html", {"data": data})
+
+
+@router.post("/journal/factors")
+async def factors_add(
+    request: Request,
+    db: Session = Depends(_db),  # noqa: B008
+):
+    """Add a factor (or re-activate a soft-deleted one with the same key)."""
+    form = await request.form()
+    try:
+        create_factor(
+            db,
+            key=str(form.get("key") or ""),
+            label=str(form.get("label") or ""),
+            kind=str(form.get("kind") or "bool"),
+            prompt=str(form.get("prompt") or ""),
+        )
+        db.commit()
+        return RedirectResponse(url="/journal/factors", status_code=303)
+    except ValueError as exc:
+        db.rollback()
+        data = query.factors_for(db)
+        return templates.TemplateResponse(
+            request,
+            "factors.html",
+            {"data": data, "error": str(exc), "form": dict(form)},
+            status_code=400,
+        )
+    finally:
+        db.close()
+
+
+@router.post("/journal/factors/{key}/edit")
+async def factors_edit(
+    key: str,
+    request: Request,
+    db: Session = Depends(_db),  # noqa: B008
+):
+    """Edit a factor's label / kind / prompt."""
+    form = await request.form()
+    try:
+        update_factor(
+            db,
+            key,
+            label=str(form.get("label") or ""),
+            kind=str(form.get("kind") or "bool"),
+            prompt=str(form.get("prompt") or ""),
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        data = query.factors_for(db)
+        return templates.TemplateResponse(
+            request,
+            "factors.html",
+            {"data": data, "error": str(exc)},
+            status_code=400,
+        )
+    finally:
+        db.close()
+    return RedirectResponse(url="/journal/factors", status_code=303)
+
+
+@router.post("/journal/factors/{key}/delete")
+def factors_delete(
+    key: str,
+    db: Session = Depends(_db),  # noqa: B008
+):
+    """Remove a factor (soft delete — logged data is kept, just hidden)."""
+    try:
+        delete_factor(db, key)
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/journal/factors", status_code=303)
+
+
+@router.post("/journal/factors/{key}/restore")
+def factors_restore(
+    key: str,
+    db: Session = Depends(_db),  # noqa: B008
+):
+    """Re-activate a soft-deleted factor."""
+    try:
+        update_factor(db, key, active=True)
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/journal/factors", status_code=303)
+
 
 @router.get("/api/summary")
 def api_summary(

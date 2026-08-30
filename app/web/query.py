@@ -8,17 +8,19 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
+from ..coach.interpretation import interpret_insights
 from ..db.models import (
     Activity,
     ComputedScore,
     DailyWellness,
     DeviceMetrics,
     IntradaySeries,
+    JournalFactor,
     SleepSession,
 )
 from ..journal.entries import entries_in_range, get_entry
 from ..journal.insights import compute_all_insights
-from ..journal.schema import FACTORS, FACTORS_BY_KEY
+from ..journal.schema import get_factor, get_factors
 from ..settings import get_settings
 
 
@@ -224,8 +226,30 @@ def journal_for(session: Session, day: date) -> dict:
         "responses": entry.responses if entry else {},
         "notes": entry.notes if entry else None,
         "factors": [
-            {"key": f.key, "label": f.label, "kind": f.kind, "prompt": f.prompt} for f in FACTORS
+            {"key": f.key, "label": f.label, "kind": f.kind, "prompt": f.prompt}
+            for f in get_factors(session)
         ],
+    }
+
+
+def factors_for(session: Session) -> dict:
+    """The full factor registry (incl. inactive) for the management page."""
+    rows = session.execute(
+        select(JournalFactor)
+        .where(JournalFactor.user_id == 1)
+        .order_by(JournalFactor.sort_order, JournalFactor.id)
+    ).scalars().all()
+    return {
+        "factors": [
+            {
+                "key": r.key,
+                "label": r.label,
+                "kind": r.kind,
+                "prompt": r.prompt,
+                "active": r.active,
+            }
+            for r in rows
+        ]
     }
 
 
@@ -236,27 +260,62 @@ def journal_history(session: Session, days: int = 30, end: date | None = None) -
     entries = entries_in_range(session, start, end)
     out = []
     for e in reversed(entries):
+        labels = {}
+        for k in e.responses:
+            factor = get_factor(session, k)
+            labels[k] = factor.label if factor else k
         out.append(
             {
                 "date": e.entry_date.isoformat(),
                 "responses": {
-                    k: {"label": (FACTORS_BY_KEY.get(k).label if FACTORS_BY_KEY.get(k) else k), "value": v}
-                    for k, v in e.responses.items()
+                    k: {"label": labels.get(k, k), "value": v} for k, v in e.responses.items()
                 },
             }
         )
     return {"start": start.isoformat(), "end": end.isoformat(), "entries": out}
 
 
-def insights_for(session: Session, end: date | None = None) -> dict:
-    """Gated correlation insights (dashboard + /api/insights)."""
+def insights_for(
+    session: Session,
+    end: date | None = None,
+    sort: str = "effect",
+    direction: str = "desc",
+    limit: int | None = None,
+) -> dict:
+    """Gated correlation insights (dashboard + /api/insights).
+
+    `sort` ∈ {"effect", "date", "alphabet"} — effect = |Cohen's d|,
+    date = most recent sample day, alphabet = factor label. `direction` is
+    "asc"|"desc". The list is capped at `limit` (INSIGHTS_MAX_DISPLAY) and
+    each shown insight carries an optional LLM interpretation (cached).
+    """
     end = end or date.today()
     insights = compute_all_insights(session, end=end)
     settings = get_settings()
+    limit = settings.INSIGHTS_MAX_DISPLAY if limit is None else limit
+    sort = sort if sort in ("date", "alphabet", "effect") else "effect"
+    direction = direction if direction in ("asc", "desc") else "desc"
+
+    if sort == "date":
+        insights.sort(key=lambda i: i.last_sample_date, reverse=(direction == "desc"))
+    elif sort == "alphabet":
+        insights.sort(
+            key=lambda i: (i.factor_label.lower(), i.outcome_label),
+            reverse=(direction == "desc"),
+        )
+    else:  # effect (default)
+        insights.sort(key=lambda i: abs(i.cohens_d), reverse=(direction == "desc"))
+
+    shown = insights[:limit]
+    interpretations = interpret_insights(session, shown)
     return {
         "end": end.isoformat(),
         "window_days": settings.JOURNAL_INSIGHT_WINDOW_DAYS,
         "min_samples": settings.JOURNAL_INSIGHT_MIN_SAMPLES,
+        "sort": sort,
+        "direction": direction,
+        "limit": limit,
+        "total": len(insights),
         "insights": [
             {
                 "factor_key": i.factor_key,
@@ -273,9 +332,11 @@ def insights_for(session: Session, end: date | None = None) -> dict:
                 "n_baseline": i.n_baseline,
                 "window_start": i.window_start.isoformat(),
                 "window_end": i.window_end.isoformat(),
+                "last_sample_date": i.last_sample_date.isoformat(),
                 "text": i.text(),
+                "interpretation": interpretations.get(idx),
             }
-            for i in insights
+            for idx, i in enumerate(shown)
         ],
     }
 

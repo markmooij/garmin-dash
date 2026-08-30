@@ -235,6 +235,68 @@ def test_insights_view_renders_empty_state(client):
     assert "Nog geen inzichten" in r.text
 
 
+def test_insights_view_accepts_sort_params(client):
+    for sort in ("effect", "date", "alphabet"):
+        for direction in ("asc", "desc"):
+            r = client.get(f"/insights?sort={sort}&dir={direction}")
+            assert r.status_code == 200
+    # invalid sort/direction fall back to defaults without erroring
+    r = client.get("/insights?sort=bogus&dir=sideways")
+    assert r.status_code == 200
+    assert "Nog geen inzichten" in r.text  # empty state still renders
+
+
+def test_factors_view_renders_registry(client):
+    r = client.get("/journal/factors")
+    assert r.status_code == 200
+    assert "Factoren beheren" in r.text
+    assert "Alcohol" in r.text
+    assert "Nieuwe factor" in r.text
+
+
+def test_factors_add_edit_delete_restore_roundtrip(client):
+    # add
+    r = client.post(
+        "/journal/factors",
+        data={"key": "meditatie", "label": "Meditatie", "kind": "bool", "prompt": "10+ min gemediteerd"},
+    )
+    assert r.status_code == 200
+    body = client.get("/api/journal?date=2026-08-09").json()
+    keys = [f["key"] for f in body["factors"]]
+    assert "meditatie" in keys
+
+    # edit
+    r = client.post(
+        "/journal/factors/meditatie/edit",
+        data={"label": "Meditatie (nieuw)", "kind": "bool", "prompt": "10+ min"},
+    )
+    assert r.status_code == 200
+    body = client.get("/api/journal?date=2026-08-09").json()
+    f = next(f for f in body["factors"] if f["key"] == "meditatie")
+    assert f["label"] == "Meditatie (nieuw)"
+
+    # delete (soft) → hidden from the journal form
+    r = client.post("/journal/factors/meditatie/delete")
+    assert r.status_code == 200
+    body = client.get("/api/journal?date=2026-08-09").json()
+    assert "meditatie" not in [f["key"] for f in body["factors"]]
+
+    # restore
+    r = client.post("/journal/factors/meditatie/restore")
+    assert r.status_code == 200
+    body = client.get("/api/journal?date=2026-08-09").json()
+    assert "meditatie" in [f["key"] for f in body["factors"]]
+
+
+def test_factors_add_invalid_key_shows_error(client):
+    r = client.post(
+        "/journal/factors",
+        data={"key": "Ongeldig!", "label": "X", "kind": "bool", "prompt": "y"},
+    )
+    assert r.status_code == 400
+    assert "key" in r.text.lower()
+
+
 def test_api_journal_json(client):
     d = client.get("/api/journal?date=2026-08-09").json()
     assert d["date"] == "2026-08-09"

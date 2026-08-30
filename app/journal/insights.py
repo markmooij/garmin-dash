@@ -25,7 +25,7 @@ from sqlalchemy import select
 from ..db.models import ComputedScore, SleepSession
 from ..settings import get_settings
 from .entries import entries_in_range
-from .schema import FACTORS, FACTORS_BY_KEY, OUTCOME_LABELS, OUTCOMES
+from .schema import OUTCOME_LABELS, OUTCOMES, get_factor, get_factors
 
 
 if TYPE_CHECKING:
@@ -48,6 +48,7 @@ class Insight:
     n_baseline: int
     window_start: date
     window_end: date
+    last_sample_date: date  # most recent outcome day used (for date sorting)
 
     @property
     def direction(self) -> str:
@@ -138,7 +139,7 @@ def compute_insight(
     window_days = window_days or settings.JOURNAL_INSIGHT_WINDOW_DAYS
     min_samples = min_samples if min_samples is not None else settings.JOURNAL_INSIGHT_MIN_SAMPLES
     offset_days = offset_days if offset_days is not None else settings.JOURNAL_OUTCOME_OFFSET_DAYS
-    factor = FACTORS_BY_KEY.get(factor_key)
+    factor = get_factor(session, factor_key, user_id=user_id)
     if factor is None or outcome_key not in OUTCOMES:
         return None
 
@@ -150,6 +151,7 @@ def compute_insight(
 
     exposed: list[float] = []
     baseline: list[float] = []
+    last_sample: date | None = None
     for entry in entries:
         if factor_key not in entry.responses:
             continue
@@ -161,6 +163,8 @@ def compute_insight(
         if val is None:
             continue
         (exposed if is_exp else baseline).append(float(val))
+        if last_sample is None or outcome_day > last_sample:
+            last_sample = outcome_day
 
     if len(exposed) < min_samples or len(baseline) < min_samples:
         return None
@@ -179,15 +183,16 @@ def compute_insight(
         n_baseline=len(baseline),
         window_start=start,
         window_end=end,
+        last_sample_date=last_sample or end,
     )
 
 
 def compute_all_insights(
     session: Session, end: date | None = None, user_id: int = USER_ID
 ) -> list[Insight]:
-    """Every factor × outcome pair that clears the sample gate, largest |d| first."""
+    """Every active factor × outcome pair that clears the sample gate, largest |d| first."""
     out: list[Insight] = []
-    for factor in FACTORS:
+    for factor in get_factors(session, user_id=user_id):
         for outcome_key in OUTCOMES:
             insight = compute_insight(session, factor.key, outcome_key, end=end, user_id=user_id)
             if insight is not None:

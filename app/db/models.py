@@ -244,6 +244,58 @@ class JournalEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class JournalFactor(Base):
+    """User-editable journal factor registry (Phase 5.5).
+
+    The code-level `DEFAULT_FACTORS` in `journal.schema` is the seed; the
+    live registry lives here so users can add/remove/edit factors from the
+    web UI. `key` is the stable identifier journal responses are stored
+    under — renaming a label or prompt never touches logged data, and
+    removing a factor is a soft delete (`active=False`) so history and
+    orphaned responses are preserved.
+    """
+
+    __tablename__ = "journal_factors"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_journal_factor_user_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1)
+    key: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16))  # "bool" | "count"
+    prompt: Mapped[str] = mapped_column(String(200))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class InsightInterpretation(Base):
+    """Cached LLM interpretation of one gated insight (Phase 5.5).
+
+    Keyed by a hash of the insight's exact stats, so the interpretation is
+    reused verbatim while the numbers are unchanged and regenerated the
+    moment any of them move (new data shifts the window daily).
+    """
+
+    __tablename__ = "insight_interpretations"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "factor_key", "outcome_key", "data_hash", name="uq_insight_interp"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1)
+    factor_key: Mapped[str] = mapped_column(String(64))
+    outcome_key: Mapped[str] = mapped_column(String(32))
+    data_hash: Mapped[str] = mapped_column(String(64))
+    interpretation: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ComputedScore(Base):
     """Materialized daily metric scores (Phase 2)."""
 

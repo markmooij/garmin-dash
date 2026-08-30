@@ -44,11 +44,16 @@ uvicorn app.app:app --port 8123
 # The Signal evening reminder asks at most JOURNAL_PROMPT_FACTORS_PER_DAY (3)
 # questions and rotates through the registry, prioritising the factors
 # furthest from clearing the insight gate; the web form always has all of them.
+# The factor vocabulary is editable at /journal/factors (add/edit/soft-delete).
 # Set DASHBOARD_URL so those messages link the full form (highly recommended:
 # it is what keeps the Signal message short without losing the other factors).
 gdash journal log stress_hoog j   # log a factor for today
 gdash journal log stretchen 2     # count factors take a number
 gdash journal insights            # gated correlation insights
+
+# Insights (Phase 5.5) — /insights sorts by date/effect/alphabet (asc/desc),
+# caps at 8 cards, and can show a short LLM interpretation per correlation
+# (grounded + cached; needs LLM_ENABLED=true).
 
 # LLM coach (Phase 6) — needs LLM_ENABLED=true + LLM_BASE_URL in .env
 gdash coach ask "Hoe ging deze week?"   # or Signal /ask, or web /coach

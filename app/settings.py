@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # (typically logged in the evening); the behavioral effect shows up in
     # the *next* morning's recovery/sleep (the night from D to D+1).
     JOURNAL_OUTCOME_OFFSET_DAYS: int = 1
+    # Insights page: cap the number of cards shown (the rest stay computable
+    # but off-screen) and the number of fresh LLM interpretations generated
+    # per page load (cached afterwards — see coach/interpretation.py).
+    INSIGHTS_MAX_DISPLAY: int = 8
+    INSIGHTS_LLM_MAX_PER_LOAD: int = 3
 
     @property
     def is_prod(self) -> bool:

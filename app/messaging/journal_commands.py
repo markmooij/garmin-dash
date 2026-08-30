@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from ..journal.entries import get_entry, upsert_response
 from ..journal.insights import compute_all_insights
 from ..journal.rotation import factors_for_day
-from ..journal.schema import FACTORS, FACTORS_BY_KEY, Factor, parse_bool
+from ..journal.schema import FACTORS, Factor, get_factor, get_factors, parse_bool
 from ..settings import get_settings
 
 
@@ -37,13 +37,13 @@ def _today(day: date | None) -> date:
     return day if day is not None else datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
 
 
-def _factor_list_text(factors: list[Factor] | None = None) -> str:
+def _factor_list_text(factors: list[Factor]) -> str:
     """Numbered list of the factors to answer, key + short prompt.
 
     The key is what the user types after /log, so it stays visible; the
     verbose label is reserved for /journal replies and the web form.
     """
-    lines = [f"{i}. {f.key} — {f.prompt}" for i, f in enumerate(factors or FACTORS, 1)]
+    lines = [f"{i}. {f.key} — {f.prompt}" for i, f in enumerate(factors, 1)]
     return "\n".join(lines)
 
 
@@ -71,8 +71,8 @@ def log_prompt_text(
     instruction line, and a link to the dashboard for everything else.
 
     `factors` is the rotated subset chosen by `rotation.factors_for_day`;
-    when omitted (e.g. plain `/journal` without a session) the full registry
-    is listed. An empty list means everything is already logged today.
+    when omitted the default seed registry is listed (used by tests). An
+    empty list means everything is already logged today.
     """
     day = _today(day)
     header = f"📓 Dagboek {_dutch_date(day)}"
@@ -89,11 +89,13 @@ def route_log(session: Session, args: list[str], day: date | None = None) -> str
     """/log <factor> <value> — record one factor for today."""
     day = _today(day)
     if len(args) < 2:
-        return "Gebruik: /log <factor> <j/n of aantal>\n\n" + _factor_list_text()
+        return "Gebruik: /log <factor> <j/n of aantal>\n\n" + _factor_list_text(
+            get_factors(session)
+        )
     key, raw_value = args[0].lower(), args[1]
-    factor = FACTORS_BY_KEY.get(key)
+    factor = get_factor(session, key)
     if factor is None:
-        return f"Onbekende factor: {key}\n\n" + _factor_list_text()
+        return f"Onbekende factor: {key}\n\n" + _factor_list_text(get_factors(session))
 
     if factor.kind == "bool":
         parsed = parse_bool(raw_value)
@@ -119,7 +121,7 @@ def route_journal(session: Session, day: date | None = None) -> str:
         return log_prompt_text(day, factors_for_day(session, day))
     lines = [f"📓 Dagboek {_dutch_date(day)}"]
     for key, value in entry.responses.items():
-        factor = FACTORS_BY_KEY.get(key)
+        factor = get_factor(session, key)
         label = factor.label if factor else key
         shown = "ja" if value is True else "nee" if value is False else f"{value:g}"
         lines.append(f"  {label}: {shown}")

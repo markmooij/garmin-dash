@@ -29,6 +29,10 @@ def session(tmp_path) -> Session:
     Base.metadata.create_all(bind=factory().get_bind())
     s = factory()
     seed_default_user(s)
+    from app.journal.schema import seed_factors
+
+    seed_factors(s)
+    s.commit()
     return s
 
 

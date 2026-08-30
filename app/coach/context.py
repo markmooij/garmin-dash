@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from ..journal.entries import get_entry
 from ..journal.insights import compute_all_insights
-from ..journal.schema import FACTORS_BY_KEY
+from ..journal.schema import get_factor
 from ..settings import get_settings
 from ..web.query import USER_ID, summary_for
 
@@ -58,7 +58,8 @@ class CoachContext:
     days: list[dict] = field(default_factory=list)  # trailing window, oldest first
     aggregates: dict = field(default_factory=dict)  # week min/max/mean, app-computed
     activities: list[dict] = field(default_factory=list)  # name + minutes
-    journal_today: dict = field(default_factory=dict)
+    journal_today: dict = field(default_factory=dict)  # {factor_key: value}
+    journal_labels: dict = field(default_factory=dict)  # {factor_key: label}
     insights: list[dict] = field(default_factory=list)
 
     def to_prompt_text(self) -> str:
@@ -130,8 +131,7 @@ class CoachContext:
             lines.append("")
             lines.append(f"Dagboek vandaag ({_NL_WEEKDAYS[self.today.weekday()]}):")
             for key, value in self.journal_today.items():
-                factor = FACTORS_BY_KEY.get(key)
-                label = factor.label if factor else key
+                label = self.journal_labels.get(key, key)
                 shown = "ja" if value is True else "nee" if value is False else f"{value:g}"
                 lines.append(f"  {label}: {shown}")
 
@@ -193,6 +193,10 @@ def build_context(
 
     entry = get_entry(session, day, user_id=user_id)
     journal_today = dict(entry.responses) if entry else {}
+    journal_labels: dict[str, str] = {}
+    for key in journal_today:
+        factor = get_factor(session, key, user_id=user_id)
+        journal_labels[key] = factor.label if factor else key
 
     aggregates: dict = {}
     if days:
@@ -225,5 +229,6 @@ def build_context(
         aggregates=aggregates,
         activities=activities,
         journal_today=journal_today,
+        journal_labels=journal_labels,
         insights=insights,
     )

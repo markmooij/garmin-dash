@@ -260,6 +260,17 @@ answering *what is it / what does it do / how does it develop during the day*, w
 actual implementations in `metrics/`. Tests assert every dashboard metric is documented and that
 no entry is left stubbed.
 
+**Update — editable factor registry + insight interpretation + sorting:** the factor vocabulary
+moved from a code constant to a DB table (`journal_factors`, seeded from `DEFAULT_FACTORS`),
+managed at `/journal/factors` — add/edit/remove (soft-delete, data preserved, restore supported).
+Every consumer reads the live registry: Signal reminder rotation, `/log`, web form, coach context,
+and the insight engine, so a new question flows through everywhere on the next save. The insights
+page gained a server-side sort control (date / effect / alphabet, asc/desc) and a cap of
+`INSIGHTS_MAX_DISPLAY` (8) cards, and each shown correlation can carry a short LLM
+interpretation (`coach/interpretation.py`) — grounded against the exact stats, cached by
+data-hash, regenerated only when the numbers move, at most `INSIGHTS_LLM_MAX_PER_LOAD` (3) per
+page load.
+
 *Done when:* engine demonstrably refuses under-powered claims (✅ tests); a real
 alcohol/HRV-style insight renders end-to-end after ~2 weeks of logging (⏳ needs real data).
 

@@ -1,5 +1,7 @@
 {# Strain card: 0-21 gauge with load breakdown #}
+{% from "partials/_abbr.html" import abbr %}
 {% set strain = data.strain %}
+{% set avg_strain = avg.strain %}
 <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
   <div class="flex items-baseline justify-between">
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Belasting</h2>
@@ -13,6 +15,9 @@
       {% if not strain or strain == 0 %}Rustdag{% elif strain < 9 %}Lichte belasting{% elif strain < 14 %}Matige belasting{% else %}Zware belasting{% endif %}
     </div>
   </div>
+  {% if avg_strain is not none %}
+    <div class="text-[11px] text-zinc-500 mt-0.5">gem. {{ '%.1f'|format(avg_strain) }} ({{ days }}d)</div>
+  {% endif %}
   <div class="mt-3 h-2.5 rounded-full bg-zinc-800 overflow-hidden flex">
     {% for i in range(21) %}
       <div class="flex-1 {% if i < 9 %}bg-emerald-900/60{% elif i < 14 %}bg-yellow-900/60{% else %}bg-red-900/60{% endif %}"
@@ -23,8 +28,8 @@
     <p class="mt-2 text-[11px] text-zinc-500">ruwe load {{ '%.0f'|format(data.raw_load) }} · TRIMP + kracht-duur</p>
   {% endif %}
   <div class="mt-3 flex gap-4 text-[11px] text-zinc-500">
-    <span>ATL <span class="text-zinc-300">{{ '%.1f'|format(data.atl or 0) }}</span></span>
-    <span>CTL <span class="text-zinc-300">{{ '%.1f'|format(data.ctl or 0) }}</span></span>
-    <span>TSB <span class="{{ 'text-emerald-400' if (data.tsb or 0) > 0 else 'text-zinc-300' }}">{{ '%+.1f'|format(data.tsb or 0) }}</span></span>
+    <span>{{ abbr('ATL', 'Acute Training Load — vermoeidheid, 7-daags gemiddelde van je strain.', 'tsb-training-stress-balance') }} <span class="text-zinc-300">{{ '%.1f'|format(data.atl or 0) }}</span>{% if avg.atl is not none %} <span class="text-zinc-600">/ gem {{ '%.1f'|format(avg.atl) }}</span>{% endif %}</span>
+    <span>{{ abbr('CTL', 'Chronic Training Load — fitheid, 42-daags gemiddelde van je strain.', 'tsb-training-stress-balance') }} <span class="text-zinc-300">{{ '%.1f'|format(data.ctl or 0) }}</span>{% if avg.ctl is not none %} <span class="text-zinc-600">/ gem {{ '%.1f'|format(avg.ctl) }}</span>{% endif %}</span>
+    <span>{{ abbr('TSB', 'Training Stress Balance — CTL − ATL. Positief = fris, negatief = vermoeid.', 'tsb-training-stress-balance') }} <span class="{{ 'text-emerald-400' if (data.tsb or 0) > 0 else 'text-zinc-300' }}">{{ '%+.1f'|format(data.tsb or 0) }}</span>{% if avg.tsb is not none %} <span class="text-zinc-600">/ gem {{ '%+.1f'|format(avg.tsb) }}</span>{% endif %}</span>
   </div>
 </div>

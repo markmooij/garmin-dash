@@ -109,7 +109,7 @@ def test_schedule_registers_journal_and_digest_jobs_when_signal_enabled(monkeypa
             self.timezone = timezone
 
         def add_job(self, fn, trigger=None, id=None, **kw):  # noqa: ARG002
-            calls.append({"id": id, **kw})
+            calls.append({"id": id, "trigger": trigger, **kw})
 
         def start(self):
             pass
@@ -120,6 +120,8 @@ def test_schedule_registers_journal_and_digest_jobs_when_signal_enabled(monkeypa
         SYNC_DAYS_BACK = 3
         SIGNAL_ENABLED = True
         SIGNAL_REPORT_TIME = "07:30"
+        SIGNAL_REPORT_GRACE_MINUTES = 180
+        SIGNAL_REPORT_RETRY_MINUTES = 15
         SIGNAL_COMMAND_POLL_MINUTES = 5
         SIGNAL_JOURNAL_TIME = "20:30"
         SIGNAL_DIGEST_TIME = "20:00"
@@ -139,3 +141,61 @@ def test_schedule_registers_journal_and_digest_jobs_when_signal_enabled(monkeypa
         "signal-journal-reminder",
         "signal-weekly-digest",
     }
+
+
+def test_morning_report_retries_across_the_grace_window(monkeypatch):
+    """The report job must re-fire while sleep is pending, not once at 07:30.
+
+    With report 07:30 and a 180-min grace, ticks must cover 07:30–10:30 so a
+    late Garmin sleep sync is still picked up the same morning.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    calls: list[dict] = []
+
+    class FakeScheduler:
+        def __init__(self, timezone=None):
+            self.timezone = timezone
+
+        def add_job(self, fn, trigger=None, id=None, **kw):  # noqa: ARG002
+            calls.append({"id": id, "trigger": trigger, **kw})
+
+        def start(self):
+            pass
+
+    class FakeSettings:
+        TIMEZONE = "Europe/Amsterdam"
+        SYNC_INTERVAL_MINUTES = 15
+        SYNC_DAYS_BACK = 3
+        SIGNAL_ENABLED = True
+        SIGNAL_REPORT_TIME = "07:30"
+        SIGNAL_REPORT_GRACE_MINUTES = 180
+        SIGNAL_REPORT_RETRY_MINUTES = 15
+        SIGNAL_COMMAND_POLL_MINUTES = 5
+        SIGNAL_JOURNAL_TIME = "20:30"
+        SIGNAL_DIGEST_TIME = "20:00"
+        SIGNAL_DIGEST_DAY = "sun"
+
+    monkeypatch.setattr(scheduler, "BlockingScheduler", FakeScheduler)
+    monkeypatch.setattr(scheduler, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(scheduler, "run_sync_pass", lambda: None)
+
+    scheduler.schedule()
+
+    trigger = next(c for c in calls if c["id"] == "signal-morning-report")["trigger"]
+    tz = ZoneInfo("Europe/Amsterdam")
+    cursor = datetime(2026, 9, 10, 7, 0, tzinfo=tz)
+    fires = []
+    for _ in range(24):
+        nxt = trigger.get_next_fire_time(None, cursor)
+        if nxt is None or nxt.date() > cursor.date():
+            break
+        fires.append(nxt)
+        cursor = nxt + timedelta(seconds=1)
+
+    times = {f.strftime("%H:%M") for f in fires}
+    assert "07:30" in times  # the configured report time itself
+    assert "08:30" in times  # still retrying an hour later
+    assert "10:30" in times  # last tick of the 180-min grace window
+    assert len(fires) > 1, "a single daily fire cannot pick up a late sleep sync"

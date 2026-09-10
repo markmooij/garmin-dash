@@ -6,7 +6,7 @@
 <div class="flex items-center justify-between mb-5">
   <h1 class="text-xl font-semibold">Trends</h1>
   <div class="flex gap-1 text-sm" x-data="{ days: {{ days }} }"
-       x-init="$watch('days', v => { window.location = '/trends?days=' + v })">
+       x-init="$watch('days', v => { window.location = GDASH_ROOT + '/trends?days=' + v })">
     <button @click="days = 30" class="px-3 py-1.5 rounded-md border border-zinc-800"
             :class="days === 30 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">30d</button>
     <button @click="days = 90" class="px-3 py-1.5 rounded-md border border-zinc-800"
@@ -43,8 +43,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/vendor/uplot.min.js"></script>
-<script src="/static/js/charts.js"></script>
+<script src="{{ url('/static/vendor/uplot.min.js') }}"></script>
+<script src="{{ url('/static/js/charts.js') }}"></script>
 <script>
 (function () {
   const DATA = JSON.parse(document.getElementById("trend-data").textContent);
@@ -61,23 +61,23 @@
 
   GDASH.lineChart(document.getElementById("chart-tsb"),
     [
-      { label: "CTL", color: C.emerald, width: 1.5 },
-      { label: "ATL", color: C.red, width: 1.5 },
-      { label: "TSB", color: C.sky, width: 2, fill: true, value: v => v == null ? "–" : v.toFixed(1) },
+      { label: "CTL", color: C.emerald, width: 1.5, abbr: { meaning: "Chronic Training Load — fitheid, 42-daags gemiddelde van je strain.", anchor: "tsb-training-stress-balance" } },
+      { label: "ATL", color: C.red, width: 1.5, abbr: { meaning: "Acute Training Load — vermoeidheid, 7-daags gemiddelde van je strain.", anchor: "tsb-training-stress-balance" } },
+      { label: "TSB", color: C.sky, width: 2, fill: true, value: v => v == null ? "–" : v.toFixed(1), abbr: { meaning: "Training Stress Balance — CTL − ATL. Positief = fris, negatief = vermoeid.", anchor: "tsb-training-stress-balance" } },
     ],
     x, [DATA.ctl, DATA.atl, DATA.tsb], { height: 260 });
 
   GDASH.lineChart(document.getElementById("chart-rhr"),
     [
-      { label: "RHR", color: C.purple, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
-      { label: "Stress", color: C.yellow, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+      { label: "RHR", color: C.purple, width: 1.5, value: v => v == null ? "–" : v.toFixed(0), abbr: { meaning: "Rusthartslag — hartslag in rust, 's nachts gemeten door de Venu 2.", anchor: "rhr-rusthartslag" } },
+      { label: "Stress", color: C.yellow, width: 1.5, value: v => v == null ? "–" : v.toFixed(0), abbr: { meaning: "Garmins stressscore, afgeleid van hartslagvariatie gedurende de dag.", anchor: "stress" } },
     ],
     x, [DATA.rhr, DATA.stress], { height: 220 });
 
   GDASH.lineChart(document.getElementById("chart-sleep"),
     [
       { label: "Slaapscore", color: C.indigo, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
-      { label: "BB wake", color: C.zinc, width: 1.5, value: v => v == null ? "–" : v.toFixed(0) },
+      { label: "BB wake", color: C.zinc, width: 1.5, value: v => v == null ? "–" : v.toFixed(0), abbr: { meaning: "Body Battery — Garmins energiemeter op basis van HRV, stress en activiteit.", anchor: "body-battery" } },
     ],
     x, [DATA.sleep_score, DATA.bb_wake], { height: 220 });
 })();

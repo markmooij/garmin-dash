@@ -1,6 +1,9 @@
 /* Small custom styles on top of Tailwind. */
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
 
+/* Hide Alpine-managed elements until they're initialized (prevents flash). */
+[x-cloak] { display: none !important; }
+
 /* uPlot dark tweaks */
 .u-legend { font-size: 11px; color: #a1a1aa; }
 .u-title { font-size: 13px; color: #a1a1aa; }

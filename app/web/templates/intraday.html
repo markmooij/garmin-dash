@@ -34,8 +34,8 @@
 </div>
 </div>
 
-<script src="/static/vendor/uplot.min.js"></script>
-<script src="/static/js/charts.js"></script>
+<script src="{{ url('/static/vendor/uplot.min.js') }}"></script>
+<script src="{{ url('/static/js/charts.js') }}"></script>
 <script>
 function intradayPage() {
   return {
@@ -51,7 +51,7 @@ function intradayPage() {
     },
     async load() {
       this.loading = true;
-      const res = await fetch("/api/intraday?date=" + this.day);
+      const res = await fetch(GDASH_ROOT + "/api/intraday?date=" + this.day);
       const data = await res.json();
       this.loading = false;
 
@@ -98,9 +98,9 @@ function intradayPage() {
 
       this.chart = GDASH.twoScaleChart(el,
         [
-          { label: "HR", color: GDASH.colors.red, scale: "hr", value: v => v == null ? "–" : v.toFixed(0) },
-          { label: "Stress", color: GDASH.colors.yellow, scale: "hr", value: v => v == null || v < 0 ? "–" : v.toFixed(0) },
-          { label: "Body Battery", color: GDASH.colors.emerald, scale: "bb", value: v => v == null ? "–" : v.toFixed(0) },
+          { label: "HR", color: GDASH.colors.red, scale: "hr", value: v => v == null ? "–" : v.toFixed(0), abbr: { meaning: "Hartslag — aantal hartslagen per minuut.", anchor: "hartslag-hr" } },
+          { label: "Stress", color: GDASH.colors.yellow, scale: "hr", value: v => v == null || v < 0 ? "–" : v.toFixed(0), abbr: { meaning: "Garmins stressscore, afgeleid van hartslagvariatie gedurende de dag.", anchor: "stress" } },
+          { label: "Body Battery", color: GDASH.colors.emerald, scale: "bb", value: v => v == null ? "–" : v.toFixed(0), abbr: { meaning: "Garmins energiemeter op basis van HRV, stress en activiteit.", anchor: "body-battery" } },
         ],
         x, [yHR, yStress, yBB],
         {

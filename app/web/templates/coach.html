@@ -56,7 +56,7 @@
         this.loading = true;
         this.question = '';
         try {
-          const res = await fetch('/api/coach/ask', {
+          const res = await fetch(GDASH_ROOT + '/api/coach/ask', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: q }),

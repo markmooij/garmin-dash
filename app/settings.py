@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
 
+    # Subpath the app is served under behind a reverse proxy (e.g. "/supermarxx").
+    # All asset/nav/redirect paths are prefixed with this so the dashboard works
+    # when mounted at a URL prefix rather than the domain root. Empty = domain root.
+    ROOT_PATH: str = ""
+
     # Database
     DB_PATH: str = "data/garmin_dash.db"
 
@@ -51,6 +56,13 @@ class Settings(BaseSettings):
     SIGNAL_ACCOUNT: str | None = None  # the number registered in signal-cli
     SIGNAL_RECIPIENT: str | None = None  # number that receives reports/commands
     SIGNAL_REPORT_TIME: str = "07:30"  # morning briefing (local, Europe/Amsterdam)
+    # The morning briefing is deferred while last night's sleep is still
+    # pending (Garmin lagging). After this many minutes past the report time
+    # it is sent anyway with a "no sleep recorded" note, on the assumption the
+    # watch genuinely didn't capture sleep. 0 = never wait (send immediately).
+    SIGNAL_REPORT_GRACE_MINUTES: int = 180
+    # How often the morning-report job re-checks while sleep is pending.
+    SIGNAL_REPORT_RETRY_MINUTES: int = 15
     SIGNAL_COMMAND_POLL_MINUTES: int = 5
     SIGNAL_JOURNAL_TIME: str = "20:30"  # evening journal reminder
     SIGNAL_DIGEST_TIME: str = "20:00"  # weekly insights digest
@@ -120,6 +132,12 @@ class Settings(BaseSettings):
     # per page load (cached afterwards — see coach/interpretation.py).
     INSIGHTS_MAX_DISPLAY: int = 8
     INSIGHTS_LLM_MAX_PER_LOAD: int = 3
+    # Skip LLM interpretation below this |Cohen's d| ("verwaarloosbaar" per
+    # Insight.magnitude_label). A negligible effect has nothing to explain,
+    # and asking the model to describe one invites ungrounded numbers, which
+    # the grounding check drops anyway — so the round-trip is pure latency.
+    # Set to 0.0 to interpret every shown insight.
+    INSIGHTS_LLM_MIN_EFFECT: float = 0.2
 
     @property
     def is_prod(self) -> bool:

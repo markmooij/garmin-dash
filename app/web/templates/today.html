@@ -5,14 +5,54 @@
 {% block content %}
 <div class="flex items-center justify-between mb-5">
   <div class="flex items-center gap-3">
-    <a href="/?date={{ prev }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
+    <a href="{{ url('/?date=' ~ prev) }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
     <h1 class="text-xl font-semibold">
       {{ day.strftime('%A %d %B %Y') }}
       {% if day == today %}<span class="text-xs text-emerald-400 font-normal ml-2">vandaag</span>{% endif %}
     </h1>
-    <a href="/?date={{ next }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
+    <a href="{{ url('/?date=' ~ next) }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
+  </div>
+  <div class="flex items-center gap-3">
+    {% if last_sync %}
+      <div class="text-xs text-zinc-500" title="Laatste geslaagde Garmin-sync">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5"></span>
+        gesynchroniseerd {{ last_sync }}
+      </div>
+    {% endif %}
+    <div class="flex gap-1 text-sm" x-data="{ days: {{ days }} }"
+         x-init="$watch('days', v => { window.location = GDASH_ROOT + '/?days=' + v })">
+      <button @click="days = 30" class="px-3 py-1.5 rounded-md border border-zinc-800"
+              :class="days === 30 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">30d</button>
+      <button @click="days = 90" class="px-3 py-1.5 rounded-md border border-zinc-800"
+              :class="days === 90 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">90d</button>
+      <button @click="days = 180" class="px-3 py-1.5 rounded-md border border-zinc-800"
+              :class="days === 180 ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500'">180d</button>
+    </div>
   </div>
 </div>
+
+{% if morning %}
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-4" x-data="{ open: false }">
+    <div class="flex items-baseline justify-between mb-2">
+      <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">🤖 Ochtendadvies</h2>
+      <span class="text-[10px] text-zinc-500">via Signal · {{ morning.date }}</span>
+    </div>
+    {% if morning.commentary %}
+      <p class="text-sm text-zinc-200 whitespace-pre-wrap">{{ morning.commentary }}</p>
+    {% else %}
+      <p class="text-sm text-zinc-500">
+        Geen coach-advies in dit bericht (LLM uitgeschakeld of niet beschikbaar).
+      </p>
+    {% endif %}
+    <button @click="open = !open"
+            class="mt-3 text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-2">
+      <span x-show="!open">volledig ochtendbericht tonen</span>
+      <span x-show="open" x-cloak>volledig ochtendbericht verbergen</span>
+    </button>
+    <pre x-show="open" x-cloak
+         class="mt-3 text-[11px] text-zinc-400 whitespace-pre-wrap font-mono bg-zinc-950/60 border border-zinc-800 rounded-lg p-3 overflow-x-auto">{{ morning.briefing }}</pre>
+  </div>
+{% endif %}
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
   {% include "partials/recovery_card.html" %}

@@ -14,7 +14,7 @@ from ..db import get_session
 from ..journal.entries import upsert_entry
 from ..journal.schema import create_factor, delete_factor, get_factors, update_factor
 from ..settings import get_settings
-from . import explanation, query
+from . import explanation, query, viz
 
 
 if TYPE_CHECKING:
@@ -22,6 +22,61 @@ if TYPE_CHECKING:
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
+
+
+def _root_path() -> str:
+    """Subpath prefix the app is served under (e.g. "/supermarxx")."""
+    return (get_settings().ROOT_PATH or "").rstrip("/")
+
+
+def url(path: str) -> str:
+    """Prefix an app-relative path with the configured ROOT_PATH.
+
+    Templates call this for every asset/nav/redirect path so the dashboard
+    works when mounted behind a reverse proxy at a URL prefix (e.g.
+    /supermarxx) instead of the domain root.
+    """
+    root = _root_path()
+    if not root:
+        return path
+    if path == "/":
+        return root + "/"
+    return root + path
+
+
+def root_path() -> str:
+    """The subpath prefix with no trailing slash ("" at the domain root).
+
+    Exposed to templates so inline JS can build paths (e.g. fetch() calls)
+    by concatenating this prefix with an app-relative path.
+    """
+    return _root_path()
+
+
+# Make `url()` and `root_path()` available to every template.
+templates.env.globals["url"] = url
+templates.env.globals["root_path"] = root_path
+
+# Make the Garmin-native SVG visualisations available to every template.
+for _fn in (
+    "sparkline",
+    "gauge",
+    "ring",
+    "battery",
+    "stress_gauge",
+    "spo2_gauge",
+    "resp_gauge",
+    "vo2_gauge",
+    "rhr_color",
+    "stress_color",
+    "bb_color",
+    "vo2_color",
+    "spo2_color",
+    "resp_color",
+    "steps_color",
+    "intensity_color",
+):
+    templates.env.globals[_fn] = getattr(viz, _fn)
 
 
 def _db() -> Session:
@@ -46,16 +101,32 @@ def today_view(
     request: Request,
     db: Session = Depends(_db),  # noqa: B008
     date: date | None = None,
+    days: int = 90,
 ):
     day = date or _today_local()
+    days = days if days in (30, 90, 180) else 90
     try:
         data = query.summary_for(db, day)
+        avg = query.trend_averages(db, days=days, end=day)
+        recent = query.recent_series(db, days=14, end=day)
+        last_sync = query.latest_sync_time(db)
+        morning = query.latest_morning_report(db)
     finally:
         db.close()
     return templates.TemplateResponse(
         request,
         "today.html",
-        {"day": day, "prev": day - timedelta(days=1), "next": day + timedelta(days=1), "data": data},
+        {
+            "day": day,
+            "prev": day - timedelta(days=1),
+            "next": day + timedelta(days=1),
+            "data": data,
+            "avg": avg,
+            "recent": recent,
+            "days": days,
+            "last_sync": _fmt_sync_time(last_sync),
+            "morning": morning,
+        },
     )
 
 
@@ -132,7 +203,7 @@ async def journal_save(
         db.commit()
     finally:
         db.close()
-    return RedirectResponse(url=f"/journal?date={entry_date}", status_code=303)
+    return RedirectResponse(url=url(f"/journal?date={entry_date}"), status_code=303)
 
 
 @router.get("/insights")
@@ -235,7 +306,7 @@ async def factors_add(
             prompt=str(form.get("prompt") or ""),
         )
         db.commit()
-        return RedirectResponse(url="/journal/factors", status_code=303)
+        return RedirectResponse(url=url("/journal/factors"), status_code=303)
     except ValueError as exc:
         db.rollback()
         data = query.factors_for(db)
@@ -277,7 +348,7 @@ async def factors_edit(
         )
     finally:
         db.close()
-    return RedirectResponse(url="/journal/factors", status_code=303)
+    return RedirectResponse(url=url("/journal/factors"), status_code=303)
 
 
 @router.post("/journal/factors/{key}/delete")
@@ -291,7 +362,7 @@ def factors_delete(
         db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/journal/factors", status_code=303)
+    return RedirectResponse(url=url("/journal/factors"), status_code=303)
 
 
 @router.post("/journal/factors/{key}/restore")
@@ -305,7 +376,7 @@ def factors_restore(
         db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/journal/factors", status_code=303)
+    return RedirectResponse(url=url("/journal/factors"), status_code=303)
 
 
 @router.get("/api/summary")
@@ -368,3 +439,18 @@ def api_insights(
 def _today_local() -> date:
     """Server-local calendar date (dev machine / container TZ)."""
     return date.today()
+
+
+def _fmt_sync_time(sync_at) -> str | None:
+    """Format a UTC sync timestamp in the configured local timezone.
+
+    Returns None when nothing has synced yet; otherwise e.g. "04 sep 2026,
+    09:58" (local).
+    """
+    if sync_at is None:
+        return None
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(get_settings().TIMEZONE)
+    local = sync_at.astimezone(tz)
+    return local.strftime("%d %b %Y, %H:%M")

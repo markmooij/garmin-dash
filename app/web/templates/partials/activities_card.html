@@ -1,4 +1,5 @@
 {# Activities card: today's sessions with load breakdown #}
+{% from "partials/_abbr.html" import abbr %}
 {% set acts = data.activities %}
 <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
   <div class="flex items-baseline justify-between">
@@ -19,16 +20,16 @@
             </div>
             <div class="text-[11px] text-zinc-500 mt-0.5">
               {{ '%.0f'|format(dur_min) }} min
-              {% if a.avg_hr %} · gem HR {{ '%.0f'|format(a.avg_hr) }}{% endif %}
+              {% if a.avg_hr %} · gem {{ abbr('HR', 'Hartslag — aantal hartslagen per minuut.', 'hartslag-hr') }} {{ '%.0f'|format(a.avg_hr) }}{% endif %}
               {% if a.max_hr %} · max {{ '%.0f'|format(a.max_hr) }}{% endif %}
-              {% if a.bb_delta is not none %} · BB {{ '%+d'|format(a.bb_delta) }}{% endif %}
+              {% if a.bb_delta is not none %} · {{ abbr('BB', 'Body Battery — Garmins energiemeter op basis van HRV, stress en activiteit.', 'body-battery') }} {{ '%+d'|format(a.bb_delta) }}{% endif %}
             </div>
           </div>
           <div class="text-right shrink-0 ml-3">
             {% set load = a.trimp + a.strength %}
             <div class="text-sm font-semibold text-zinc-100">{{ '%.0f'|format(load) }}</div>
             <div class="text-[10px] text-zinc-600">
-              {% if a.trimp %}{{ '%.0f'|format(a.trimp) }} trimp{% endif %}
+              {% if a.trimp %}{{ '%.0f'|format(a.trimp) }} {{ abbr('TRIMP', 'Training Impulse — trainingsbelasting op basis van hartslagzones en duur.', 'strain') }}{% endif %}
               {% if a.strength %}{{ '%.0f'|format(a.strength) }} kracht{% endif %}
             </div>
           </div>

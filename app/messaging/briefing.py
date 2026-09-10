@@ -40,7 +40,13 @@ def _fmt(v: float | int | None, digits: int = 0) -> str:
     return "–" if v is None else f"{v:.{digits}f}"
 
 
-def build_briefing(session: Session, day: date | None = None, *, with_commentary: bool = False) -> str:
+def build_briefing(
+    session: Session,
+    day: date | None = None,
+    *,
+    with_commentary: bool = False,
+    sleep_status: str | None = None,
+) -> str:
     """Full /summary briefing for `day` (default: today, local time).
 
     `with_commentary`: append a short grounded LLM coach line (Phase 6) when
@@ -48,6 +54,12 @@ def build_briefing(session: Session, day: date | None = None, *, with_commentary
     disabled/unreachable coach or an ungrounded reply silently omits the
     line rather than failing the briefing (the numeric report is the
     contract; commentary is decoration).
+
+    `sleep_status`: how the sleep line is phrased when there is no sleep row.
+    "absent" (watch didn't record sleep) says so explicitly and notes that
+    recovery is computed without a sleep component; "pending" (Garmin still
+    syncing) says the data hasn't arrived yet. None keeps the historical
+    "geen registratie" wording for the /summary command.
     """
     if day is None:
         day = datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
@@ -74,6 +86,8 @@ def build_briefing(session: Session, day: date | None = None, *, with_commentary
         lines.append(f"{band} Herstel {rec['score']:.0f}/100 ({band_label})")
         if comps:
             lines.append(f"   {' · '.join(comps)}")
+        if sleep_status == "absent" and rec["components"].get("sleep") is None:
+            lines.append("   (zonder slaapcomponent — geen slaap geregistreerd)")
     else:
         lines.append("⚪ Herstel: geen data")
 
@@ -91,6 +105,10 @@ def build_briefing(session: Session, day: date | None = None, *, with_commentary
             if v:
                 stages.append(f"{label} {v // 60:.0f}m")
         lines.append(f"😴 Slaap {sleep['score']:.0f}/100 ({total:.1f}u" + (f" · {' '.join(stages)}" if stages else "") + ")")
+    elif sleep_status == "absent":
+        lines.append("😴 Slaap: niet geregistreerd (watch niet gedragen?)")
+    elif sleep_status == "pending":
+        lines.append("😴 Slaap: nog niet gesynchroniseerd")
     else:
         lines.append("😴 Slaap: geen registratie")
 
@@ -126,6 +144,27 @@ def build_briefing(session: Session, day: date | None = None, *, with_commentary
                 lines.append(f"🤖 {commentary}")
 
     return "\n".join(lines)
+
+
+def build_morning_report(
+    session: Session, day: date | None = None, *, sleep_status: str | None = None
+) -> tuple[str, str | None]:
+    """Build the morning briefing and extract the coach advice line.
+
+    Returns (text, commentary) where `text` is the full message that gets
+    sent over Signal and `commentary` is the 🤖 advice line (without the
+    emoji), or None when no commentary was generated (LLM disabled/failed).
+
+    `sleep_status` is forwarded to build_briefing so the sleep line reflects
+    whether the data is synced, absent, or still pending.
+    """
+    text = build_briefing(session, day, with_commentary=True, sleep_status=sleep_status)
+    commentary: str | None = None
+    for line in reversed(text.splitlines()):
+        if line.startswith("🤖"):
+            commentary = line[1:].strip()
+            break
+    return text, commentary
 
 
 # ── command routing ────────────────────────────────────────────────────

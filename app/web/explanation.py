@@ -12,7 +12,17 @@ change — it never re-derives anything, it only explains.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+
+
+def _slug(name: str) -> str:
+    """Anchor id for a metric card: lowercase, hyphenated, ascii-only."""
+    s = name.lower()
+    # Subscripts / accents → plain ascii before stripping the rest.
+    s = s.replace("₂", "2").replace("²", "2").replace("é", "e")
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s
 
 
 @dataclass(frozen=True)
@@ -22,6 +32,12 @@ class Metric:
     does: str
     develops: str
     range: str = ""
+    slug: str = field(default="")
+
+    def __post_init__(self) -> None:
+        # Derive the anchor slug from the name unless one was given explicitly.
+        if not self.slug:
+            object.__setattr__(self, "slug", _slug(self.name))
 
 
 @dataclass(frozen=True)
@@ -125,6 +141,18 @@ SECTIONS: list[Section] = [
         "Garmin-native metingen",
         [
             Metric(
+                name="Hartslag (HR)",
+                range="bpm",
+                what="Aantal hartslagen per minuut, gemeten door de Venu 2.",
+                does=(
+                    "Gemiddelde en maximale hartslag tijdens een activiteit geven de "
+                    "intensiteit aan; de rusthartslag (RHR) is een herstelindicator."
+                ),
+                develops=(
+                    "Stijgt bij inspanning en stress, daalt in rust en slaap."
+                ),
+            ),
+            Metric(
                 name="Stress",
                 range="0–100",
                 what="Garmins stressscore, afgeleid van hartslagvariatie gedurende de dag.",
@@ -172,6 +200,34 @@ SECTIONS: list[Section] = [
                 develops=(
                     "Op de Venu 2 wordt HRV niet getoond — herstel wordt dan "
                     "herberekend over de beschikbare factoren."
+                ),
+            ),
+            Metric(
+                name="SpO₂ (zuurstofsaturatie)",
+                range="%",
+                what=(
+                    "Gemiddelde zuurstofsaturatie in het bloed, 's nachts door de Venu 2 "
+                    "gemeten."
+                ),
+                does=(
+                    "Een normale saturatie ligt meestal ≥95%. Herhaaldelijk lage waarden "
+                    "kunnen wijzen op ademhalingsproblemen tijdens de slaap."
+                ),
+                develops=(
+                    "Schommelt per nacht; een structurele daling is belangrijker dan een "
+                    "incidentele lage meting."
+                ),
+            ),
+            Metric(
+                name="Ademhaling",
+                range="adem/min",
+                what="Gemiddelde ademhalingsfrequentie per minuut, 's nachts gemeten.",
+                does=(
+                    "Een hogere ademfrequentie dan normaal kan wijzen op stress, ziekte of "
+                    "slechte slaapkwaliteit."
+                ),
+                develops=(
+                    "Stijgt bij inspanning en stress, daalt in diepe slaap en bij rust."
                 ),
             ),
         ],

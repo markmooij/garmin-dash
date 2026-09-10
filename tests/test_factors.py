@@ -284,8 +284,13 @@ def test_interpret_insights_regenerates_when_stats_change(monkeypatch, session: 
 
 
 def test_interpret_insights_ungrounded_reply_is_dropped(monkeypatch, session: Session):
-    """A reply that fails grounding (None reply) must not be persisted."""
+    """An ungrounded reply must never reach the user.
+
+    The failure *is* recorded (so it isn't retried every load), but the bad
+    text itself is never stored and never returned.
+    """
     from app.coach import interpretation
+    from app.db.models import InsightInterpretation
 
     _seed_insight_data(session, date(2026, 5, 1))
     insights = compute_all_insights(session, end=date(2026, 6, 20))
@@ -301,4 +306,167 @@ def test_interpret_insights_ungrounded_reply_is_dropped(monkeypatch, session: Se
     monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
 
     out = interpretation.interpret_insights(session, insights, max_new=5)
-    assert out == {}  # dropped, never stored
+    assert out == {}  # dropped — never surfaced
+    rows = session.query(InsightInterpretation).all()
+    assert rows  # the attempt is remembered
+    assert all(r.interpretation is None for r in rows)  # but no bad text stored
+    assert all(r.failure == "ungrounded" for r in rows)
+
+
+# ── slow-page fixes: negative cache + negligible-effect skip ──────────
+
+def test_failed_interpretation_is_not_retried_on_next_load(
+    monkeypatch, session: Session
+):
+    """The fix for the slow /insights page: one attempt, not one per load."""
+    from app.coach import interpretation
+
+    _seed_insight_data(session, date(2026, 5, 1))
+    insights = compute_all_insights(session, end=date(2026, 6, 20))
+    calls = {"n": 0}
+
+    class _FakeClient:  # noqa: D401
+        pass
+
+    def fake_grounded(client, context, prompt):  # noqa: ARG001
+        calls["n"] += 1
+        return None, "ungrounded"
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
+
+    interpretation.interpret_insights(session, insights, max_new=5)
+    assert calls["n"] == len(insights)  # one attempt each
+
+    # every later page load must cost zero LLM round-trips
+    interpretation.interpret_insights(session, insights, max_new=5)
+    interpretation.interpret_insights(session, insights, max_new=5)
+    assert calls["n"] == len(insights)
+
+
+def test_failed_interpretation_retried_when_stats_change(monkeypatch, session: Session):
+    """The negative cache is keyed by data_hash, so new numbers get a retry."""
+    from app.coach import interpretation
+
+    _seed_insight_data(session, date(2026, 5, 1))
+    insights = compute_all_insights(session, end=date(2026, 6, 20))
+    calls = {"n": 0}
+
+    class _FakeClient:  # noqa: D401
+        pass
+
+    def fake_grounded(client, context, prompt):  # noqa: ARG001
+        calls["n"] += 1
+        return None, "ungrounded"
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
+
+    interpretation.interpret_insights(session, insights, max_new=5)
+    before = calls["n"]
+
+    # alcohol's numbers move → new hash → fresh attempt for that insight
+    upsert_response(session, date(2026, 6, 5), "alcohol", 2.0)
+    session.add(ComputedScore(user_id=1, score_date=date(2026, 6, 6), recovery_score=25.0))
+    session.commit()
+    insights2 = compute_all_insights(session, end=date(2026, 6, 20))
+    interpretation.interpret_insights(session, insights2, max_new=5)
+    assert calls["n"] == before + 1
+
+
+def test_recovered_interpretation_replaces_failure(monkeypatch, session: Session):
+    """Once the numbers move and the model succeeds, the text is served."""
+    from app.coach import interpretation
+
+    _seed_insight_data(session, date(2026, 5, 1))
+    insights = compute_all_insights(session, end=date(2026, 6, 20))
+    state = {"fail": True}
+
+    class _FakeClient:  # noqa: D401
+        pass
+
+    def fake_grounded(client, context, prompt):  # noqa: ARG001
+        if state["fail"]:
+            return None, "ungrounded"
+        return "Nette uitleg.", None
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
+
+    assert interpretation.interpret_insights(session, insights, max_new=5) == {}
+
+    state["fail"] = False
+    upsert_response(session, date(2026, 6, 5), "alcohol", 2.0)
+    session.add(ComputedScore(user_id=1, score_date=date(2026, 6, 6), recovery_score=25.0))
+    session.commit()
+    insights2 = compute_all_insights(session, end=date(2026, 6, 20))
+    out = interpretation.interpret_insights(session, insights2, max_new=5)
+    assert "Nette uitleg." in out.values()
+
+
+def test_negligible_effect_skips_llm_entirely(monkeypatch, session: Session):
+    """A tiny effect costs no LLM round-trip and stores nothing."""
+    from app.coach import interpretation
+    from app.db.models import InsightInterpretation
+    from app.journal.insights import Insight
+
+    calls = {"n": 0}
+
+    class _FakeClient:  # noqa: D401
+        pass
+
+    def fake_grounded(client, context, prompt):  # noqa: ARG001
+        calls["n"] += 1
+        return "tekst", None
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
+
+    tiny = Insight(
+        factor_key="laat_gewerkt", factor_label="Laat gewerkt",
+        outcome_key="recovery_score", outcome_label="herstel",
+        mean_exposed=50.4, mean_baseline=51.0, diff=-0.6, cohens_d=-0.07,
+        n_exposed=6, n_baseline=9,
+        window_start=date(2026, 5, 1), window_end=date(2026, 6, 20),
+        last_sample_date=date(2026, 6, 20),
+    )
+    out = interpretation.interpret_insights(session, [tiny], max_new=5)
+    assert out == {}
+    assert calls["n"] == 0  # never asked the model
+    assert session.query(InsightInterpretation).all() == []  # nothing cached
+
+
+def test_large_effect_with_zero_variance_is_still_interpreted(
+    monkeypatch, session: Session
+):
+    """cohens_d is 0.0 both for "no effect" and "cannot compute".
+
+    A 30-vs-80 gap with no within-group variance yields d=0.0, but it is a
+    huge real effect — it must not be mistaken for negligible and skipped.
+    """
+    from app.coach import interpretation
+    from app.journal.insights import Insight
+
+    calls = {"n": 0}
+
+    class _FakeClient:  # noqa: D401
+        pass
+
+    def fake_grounded(client, context, prompt):  # noqa: ARG001
+        calls["n"] += 1
+        return "Groot effect.", None
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.coach.client._grounded_reply", fake_grounded)
+
+    big = Insight(
+        factor_key="alcohol", factor_label="Alcohol",
+        outcome_key="recovery_score", outcome_label="herstel",
+        mean_exposed=30.0, mean_baseline=80.0, diff=-50.0, cohens_d=0.0,
+        n_exposed=5, n_baseline=5,
+        window_start=date(2026, 5, 1), window_end=date(2026, 6, 20),
+        last_sample_date=date(2026, 6, 20),
+    )
+    out = interpretation.interpret_insights(session, [big], max_new=5)
+    assert calls["n"] == 1  # asked despite d == 0.0
+    assert out[0] == "Groot effect."

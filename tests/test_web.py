@@ -106,6 +106,68 @@ def test_intraday_local_day_bucket(seeded: Session):
     assert datetime(2026, 8, 9, 22, 30, tzinfo=UTC).timestamp() in hrs10
 
 
+# last sync time + morning advice (dashboard header / card)
+
+def test_latest_sync_time_none_when_never_synced(seeded: Session):
+    assert query.latest_sync_time(seeded) is None
+
+
+def test_latest_sync_time_returns_most_recent_across_streams(seeded: Session):
+    from app.db.models import SyncState
+
+    older = datetime(2026, 8, 9, 6, 0, tzinfo=UTC)
+    newer = datetime(2026, 8, 9, 7, 58, tzinfo=UTC)
+    seeded.add(
+        SyncState(user_id=1, stream="sleep", last_date=date(2026, 8, 9), last_sync_at=older)
+    )
+    seeded.add(
+        SyncState(user_id=1, stream="activities", last_date=date(2026, 8, 9), last_sync_at=newer)
+    )
+    seeded.commit()
+    got = query.latest_sync_time(seeded)
+    assert got is not None
+    assert got.replace(tzinfo=UTC) == newer  # the max, not the first row
+
+
+def test_latest_morning_report_none_when_never_sent(seeded: Session):
+    assert query.latest_morning_report(seeded) is None
+
+
+def test_latest_morning_report_returns_most_recent(seeded: Session):
+    from app.db.models import MorningReport
+
+    seeded.add(
+        MorningReport(
+            user_id=1, report_date=date(2026, 8, 8), briefing="oud", commentary="oud advies"
+        )
+    )
+    seeded.add(
+        MorningReport(
+            user_id=1, report_date=date(2026, 8, 9), briefing="nieuw", commentary="nieuw advies"
+        )
+    )
+    seeded.commit()
+    assert query.latest_morning_report(seeded) == {
+        "date": "2026-08-09",
+        "briefing": "nieuw",
+        "commentary": "nieuw advies",
+    }
+
+
+def test_latest_morning_report_handles_missing_commentary(seeded: Session):
+    from app.db.models import MorningReport
+
+    seeded.add(
+        MorningReport(
+            user_id=1, report_date=date(2026, 8, 9), briefing="tekst", commentary=None
+        )
+    )
+    seeded.commit()
+    got = query.latest_morning_report(seeded)
+    assert got["commentary"] is None
+    assert got["briefing"] == "tekst"
+
+
 # ── HTTP layer ─────────────────────────────────────────────────────────
 
 def test_healthz(client):
@@ -123,10 +185,155 @@ def test_today_view_renders(client):
     assert "Kracht" in html
 
 
+def test_today_view_shows_last_sync_time(client, session: Session):
+    from app.db.models import SyncState
+
+    session.add(
+        SyncState(
+            user_id=1,
+            stream="activities",
+            last_date=date(2026, 8, 9),
+            last_sync_at=datetime(2026, 8, 9, 5, 58, tzinfo=UTC),
+        )
+    )
+    session.commit()
+    html = client.get("/?date=2026-08-09").text
+    assert "gesynchroniseerd" in html
+    # 05:58 UTC rendered in Europe/Amsterdam (CEST, +02:00) = 07:58 local
+    assert "07:58" in html
+
+
+def test_today_view_omits_sync_line_when_never_synced(client):
+    assert "gesynchroniseerd" not in client.get("/?date=2026-08-09").text
+
+
+def test_today_view_shows_morning_advice(client, session: Session):
+    from app.db.models import MorningReport
+
+    session.add(
+        MorningReport(
+            user_id=1,
+            report_date=date(2026, 8, 9),
+            briefing="Garmin Dash\nHerstel 71/100",
+            commentary="Rustig aan vandaag.",
+        )
+    )
+    session.commit()
+    html = client.get("/?date=2026-08-09").text
+    assert "Ochtendadvies" in html
+    assert "Rustig aan vandaag." in html
+    assert "Herstel 71/100" in html  # full message available behind the toggle
+
+
+def test_today_view_omits_advice_card_when_no_report(client):
+    assert "Ochtendadvies" not in client.get("/?date=2026-08-09").text
+
+
+def test_today_view_advice_card_without_commentary(client, session: Session):
+    """A briefing sent with the LLM off still shows the card + full message."""
+    from app.db.models import MorningReport
+
+    session.add(
+        MorningReport(
+            user_id=1,
+            report_date=date(2026, 8, 9),
+            briefing="Garmin Dash\nHerstel 71/100",
+            commentary=None,
+        )
+    )
+    session.commit()
+    html = client.get("/?date=2026-08-09").text
+    assert "Ochtendadvies" in html
+    assert "Geen coach-advies" in html
+
+
 def test_today_view_date_param(client):
     r = client.get("/?date=2026-08-09")
     assert r.status_code == 200
     assert "81" in r.text  # sleep score
+
+
+def test_today_view_days_buttons_present(client):
+    html = client.get("/?date=2026-08-09").text
+    assert "30d" in html
+    assert "90d" in html
+    assert "180d" in html
+
+
+def test_today_view_days_defaults_to_90(client):
+    html = client.get("/?date=2026-08-09").text
+    # the 90d button is the active one by default
+    assert "days: 90" in html
+
+
+def test_today_view_invalid_days_falls_back_to_90(client):
+    html = client.get("/?date=2026-08-09&days=999").text
+    assert "days: 90" in html
+
+
+def test_today_view_days_param_reflected(client):
+    html = client.get("/?date=2026-08-09&days=30").text
+    assert "days: 30" in html
+
+
+def test_today_view_shows_trend_averages(client):
+    """The chosen-day value is shown against the trend average."""
+    html = client.get("/?date=2026-08-09").text
+    assert "gem." in html  # recovery card average label
+    assert "(90d)" in html  # the window is labelled
+
+
+def test_today_view_shows_abbr_tooltips(client):
+    """Abbreviations carry a hover tooltip and a link to the Uitleg page."""
+    html = client.get("/?date=2026-08-09").text
+    # RHR tooltip + link to its uitleg anchor
+    assert "Rusthartslag" in html
+    assert "/uitleg#rhr-rusthartslag" in html
+    # ATL / CTL / TSB tooltips link to the TSB card
+    assert "/uitleg#tsb-training-stress-balance" in html
+    assert "Acute Training Load" in html
+    assert "Chronic Training Load" in html
+    assert "Training Stress Balance" in html
+    # VO2max tooltip
+    assert "/uitleg#vo2max" in html
+
+
+def test_trend_averages_computes_means(seeded: Session):
+    """Averages are computed over the window and exclude missing days."""
+    d = query.trend_averages(seeded, days=30, end=date(2026, 8, 9))
+    assert d["days"] == 30
+    assert d["recovery"] == pytest.approx(71.5)
+    assert d["strain"] == pytest.approx(15.25)
+    assert d["tsb"] == pytest.approx(-2.9)
+    assert d["rhr"] == pytest.approx(45.0)
+    assert d["sleep_score"] == pytest.approx(81.0)
+    assert d["vo2max"] == pytest.approx(51.0)
+
+
+def test_trend_averages_none_when_no_data(seeded: Session):
+    """A metric with no data in the window yields None, not 0."""
+    d = query.trend_averages(seeded, days=30, end=date(2026, 1, 1))
+    assert d["recovery"] is None
+    assert d["rhr"] is None
+
+
+def test_trend_averages_intensity_is_sum_then_mean(seeded: Session):
+    """Intensity minutes = moderate + vigorous summed per day, then averaged."""
+    d = query.trend_averages(seeded, days=30, end=date(2026, 8, 9))
+    # seeded day has 7 moderate + 10 vigorous = 17 intensity minutes
+    assert d["intensity_min"] == pytest.approx(17.0)
+
+
+def test_explanation_metrics_have_unique_slugs():
+    """Every uitleg metric card gets a stable, unique anchor slug."""
+    from app.web.explanation import SECTIONS
+
+    slugs = [m.slug for s in SECTIONS for m in s.metrics]
+    assert len(slugs) == len(set(slugs)), "duplicate anchor slugs"
+    assert all(slugs)  # none empty
+    assert "vo2max" in slugs
+    assert "rhr-rusthartslag" in slugs
+    assert "tsb-training-stress-balance" in slugs
 
 
 def test_trends_view_renders(client):

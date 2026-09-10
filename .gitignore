@@ -45,3 +45,16 @@ backups/
 
 # Raw personal Garmin payloads (health data — never commit)
 tests/fixtures/garmin/
+
+# Signal device-linking QR codes (pairing credential — never commit)
+qr.png
+qr-*.png
+
+# Migration/backup archives (bundle .env, Garmin tokens, DB, Signal account)
+*.tar.gz
+*.tar.zst
+
+# Live deployment dir: .env with Garmin/LLM credentials, tokens, DB, logs.
+# .env/data/*.db are already covered above; this pins the whole tree so a
+# stray file in here can never be committed by accident.
+docker/garmin-dash/

@@ -278,6 +278,12 @@ class InsightInterpretation(Base):
     Keyed by a hash of the insight's exact stats, so the interpretation is
     reused verbatim while the numbers are unchanged and regenerated the
     moment any of them move (new data shifts the window daily).
+
+    Failures are cached too (`interpretation` NULL + `failure` set). Without
+    that negative cache an insight the model can't describe groundedly is
+    retried on *every* page load, costing a multi-second LLM round-trip each
+    time for a result that is dropped again. The row is still keyed by
+    data_hash, so moving numbers get a fresh attempt.
     """
 
     __tablename__ = "insight_interpretations"
@@ -292,7 +298,11 @@ class InsightInterpretation(Base):
     factor_key: Mapped[str] = mapped_column(String(64))
     outcome_key: Mapped[str] = mapped_column(String(32))
     data_hash: Mapped[str] = mapped_column(String(64))
-    interpretation: Mapped[str] = mapped_column(Text)
+    # NULL when the attempt failed — see `failure` for why.
+    interpretation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # NULL on success; "error" (LLM call failed) or "ungrounded" (reply cited
+    # numbers not in the context, dropped by the grounding check).
+    failure: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -372,3 +382,30 @@ class SyncState(Base):
     last_date: Mapped[date | None] = mapped_column(Date)
     last_sync_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class MorningReport(Base):
+    """The daily Signal morning briefing, persisted so the dashboard can show
+    the advice that was sent. One row per report_date (upsert on re-send).
+
+    `briefing` is the full message text; `commentary` is the coach advice line
+    (the 🤖 part) extracted separately for a clean dashboard card. Both are
+    nullable-safe: a briefing sent without commentary stores commentary=None.
+    """
+
+    __tablename__ = "morning_reports"
+    __table_args__ = (UniqueConstraint("user_id", "report_date", name="uq_morning_user_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1)
+    report_date: Mapped[date] = mapped_column(Date, index=True)
+    briefing: Mapped[str] = mapped_column(Text)
+    commentary: Mapped[str | None] = mapped_column(Text)
+    # Set once the briefing is actually delivered over Signal. A row with
+    # sent_at=NULL means the briefing was persisted but the send failed (or
+    # hasn't happened yet) — the scheduler retries until it goes through.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

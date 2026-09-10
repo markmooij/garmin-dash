@@ -17,9 +17,16 @@ htmlcov/
 !.env.prod.example
 
 # Local data — health data, tokens, SQLite DB, logs
+# (match at any depth so migrated deployment data under docker/ is excluded too)
 data/
+**/data/
 logs/
+**/logs/
 !libs/signal_messenger/tests/
+
+# Migrated deployment bundle / runtime state under docker/
+docker/garmin-dash/
+*.tar.gz
 
 # Editor/OS noise
 .DS_Store

@@ -108,6 +108,7 @@ GDASH.lineChart = function (el, series, x, yArrays, opts = {}) {
     el
   );
   GDASH.autoResize(el, u, opts.height || 260);
+  GDASH.legendTooltips(u, series);
   return u;
 };
 
@@ -156,6 +157,7 @@ GDASH.twoScaleChart = function (el, series, x, yArrays, opts = {}) {
   );
   u._gdashBands = opts.bands || [];
   GDASH.autoResize(el, u, opts.height || 300);
+  GDASH.legendTooltips(u, series);
   return u;
 };
 
@@ -175,6 +177,57 @@ GDASH.drawBands = function (u) {
     ctx.fillRect(bbox.left + x0, bbox.top, Math.max(0, x1 - x0), bbox.height);
   }
   ctx.restore();
+};
+
+/* Build a hover-tooltip abbreviation element, matching the `abbr()` Jinja
+   macro used on the home screen (dotted underline + Alpine x-show tooltip +
+   link to the matching /uitleg card). Returns the wrapper <span>. */
+GDASH.abbrEl = function (label, meaning, anchor) {
+  const wrap = document.createElement("span");
+  wrap.className = "relative inline-flex items-center group";
+  wrap.setAttribute("x-data", "{ open: false }");
+
+  const link = document.createElement("a");
+  link.href = GDASH_ROOT + "/uitleg#" + anchor;
+  link.className = "underline decoration-dotted decoration-zinc-600 underline-offset-2 hover:text-zinc-100 hover:decoration-zinc-400";
+  link.setAttribute("@mouseenter", "open = true");
+  link.setAttribute("@mouseleave", "open = false");
+  link.setAttribute("@focus", "open = true");
+  link.setAttribute("@blur", "open = false");
+  link.textContent = label;
+
+  const tip = document.createElement("span");
+  tip.setAttribute("x-show", "open");
+  tip.setAttribute("x-cloak", "");
+  tip.className = "absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-[11px] leading-snug text-zinc-200 shadow-xl z-50 pointer-events-none";
+  tip.textContent = meaning;
+  const hint = document.createElement("span");
+  hint.className = "block mt-1 text-[10px] text-zinc-500";
+  hint.textContent = "→ Uitleg";
+  tip.appendChild(hint);
+
+  wrap.appendChild(link);
+  wrap.appendChild(tip);
+  return wrap;
+};
+
+/* Wrap each uPlot legend label with an abbreviation tooltip.
+   `series` is the y-series config array (the same array passed to
+   lineChart/twoScaleChart); entries may carry `abbr: { meaning, anchor }`.
+   Call after the chart is created so the legend DOM exists. */
+GDASH.legendTooltips = function (u, series) {
+  const rows = (u.root || u.over).querySelectorAll(".u-legend .u-series");
+  // uPlot prepends the x-axis series (index 0), so row i+1 maps to series[i].
+  series.forEach((s, i) => {
+    if (!s.abbr) return;
+    const row = rows[i + 1];
+    if (!row) return;
+    const label = row.querySelector(".u-label");
+    if (!label) return;
+    const text = label.textContent;
+    label.textContent = "";
+    label.appendChild(GDASH.abbrEl(text, s.abbr.meaning, s.abbr.anchor));
+  });
 };
 
 /* Keep charts sized to their container (Tailwind's browser build applies

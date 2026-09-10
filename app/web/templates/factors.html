@@ -5,7 +5,7 @@
 {% block content %}
 <div class="flex items-center justify-between mb-5">
   <div class="flex items-center gap-3">
-    <a href="/journal" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">← Dagboek</a>
+    <a href="{{ url('/journal') }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">← Dagboek</a>
     <h1 class="text-xl font-semibold">Factoren beheren</h1>
   </div>
 </div>
@@ -39,18 +39,18 @@
               </div>
               <div class="flex items-center gap-2 shrink-0">
                 {% if f.active %}
-                  <form method="post" action="/journal/factors/{{ f.key }}/delete" class="inline">
+                  <form method="post" action="{{ url('/journal/factors/' ~ f.key ~ '/delete') }}" class="inline">
                     <button type="submit" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-rose-300 text-xs">Verwijder</button>
                   </form>
                 {% else %}
-                  <form method="post" action="/journal/factors/{{ f.key }}/restore" class="inline">
+                  <form method="post" action="{{ url('/journal/factors/' ~ f.key ~ '/restore') }}" class="inline">
                     <button type="submit" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-emerald-300 text-xs">Herstel</button>
                   </form>
                 {% endif %}
               </div>
             </div>
             {% if f.active %}
-              <form method="post" action="/journal/factors/{{ f.key }}/edit" class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+              <form method="post" action="{{ url('/journal/factors/' ~ f.key ~ '/edit') }}" class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
                 <div>
                   <label class="text-[10px] text-zinc-500 block mb-1">Label</label>
                   <input type="text" name="label" value="{{ f.label }}" class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1 text-sm">
@@ -79,7 +79,7 @@
 
   <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 h-fit">
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">Nieuwe factor</h2>
-    <form method="post" action="/journal/factors" class="space-y-3">
+    <form method="post" action="{{ url('/journal/factors') }}" class="space-y-3">
       <div>
         <label class="text-[10px] text-zinc-500 block mb-1">Sleutel (voor /log, alleen a-z 0-9 _)</label>
         <input type="text" name="key" value="{{ form.key if form else '' }}" required

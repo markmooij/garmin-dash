@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..coach.interpretation import interpret_insights
 from ..db.models import (
@@ -16,7 +16,9 @@ from ..db.models import (
     DeviceMetrics,
     IntradaySeries,
     JournalFactor,
+    MorningReport,
     SleepSession,
+    SyncState,
 )
 from ..journal.entries import entries_in_range, get_entry
 from ..journal.insights import compute_all_insights
@@ -218,6 +220,130 @@ def trends_for(session: Session, days: int = 90, end: date | None = None) -> dic
     }
 
 
+def trend_averages(session: Session, days: int = 90, end: date | None = None) -> dict:
+    """Mean of each dashboard metric over the trailing `days` window.
+
+    Used by the Today view to show every metric against its chosen trend
+    average (e.g. "RHR 52 / gem. 54"). Averages are computed in SQL over
+    the same window the Trends page uses, so the number matches what the
+    trend charts show. Missing days are simply excluded from each mean (a
+    metric with no data in the window yields None, not 0).
+    """
+    end = end or date.today()
+    start = end - timedelta(days=days - 1)
+
+    def _avg(model, column, date_col):
+        return session.execute(
+            select(func.avg(column)).where(
+                model.user_id == USER_ID,
+                date_col >= start,
+                date_col <= end,
+            )
+        ).scalar_one_or_none()
+
+    def _avg_sum(model, col_a, col_b, date_col):
+        # Sum two columns per row, then average across rows (intensity minutes).
+        return session.execute(
+            select(func.avg(func.coalesce(col_a, 0) + func.coalesce(col_b, 0))).where(
+                model.user_id == USER_ID,
+                date_col >= start,
+                date_col <= end,
+            )
+        ).scalar_one_or_none()
+
+    return {
+        "days": days,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "recovery": _avg(ComputedScore, ComputedScore.recovery_score, ComputedScore.score_date),
+        "strain": _avg(ComputedScore, ComputedScore.strain, ComputedScore.score_date),
+        "atl": _avg(ComputedScore, ComputedScore.atl, ComputedScore.score_date),
+        "ctl": _avg(ComputedScore, ComputedScore.ctl, ComputedScore.score_date),
+        "tsb": _avg(ComputedScore, ComputedScore.tsb, ComputedScore.score_date),
+        "sleep_score": _avg(SleepSession, SleepSession.sleep_score, SleepSession.calendar_date),
+        "rhr": _avg(DailyWellness, DailyWellness.resting_heart_rate, DailyWellness.calendar_date),
+        "stress": _avg(DailyWellness, DailyWellness.avg_stress, DailyWellness.calendar_date),
+        "bb_at_wake": _avg(DailyWellness, DailyWellness.bb_at_wake, DailyWellness.calendar_date),
+        "bb_most_recent": _avg(DailyWellness, DailyWellness.bb_most_recent, DailyWellness.calendar_date),
+        "steps": _avg(DailyWellness, DailyWellness.steps, DailyWellness.calendar_date),
+        "intensity_min": _avg_sum(
+            DailyWellness,
+            DailyWellness.moderate_intensity_minutes,
+            DailyWellness.vigorous_intensity_minutes,
+            DailyWellness.calendar_date,
+        ),
+        "spo2": _avg(DailyWellness, DailyWellness.avg_spo2, DailyWellness.calendar_date),
+        "respiration": _avg(DailyWellness, DailyWellness.avg_respiration, DailyWellness.calendar_date),
+        "vo2max": _avg(DeviceMetrics, DeviceMetrics.vo2max, DeviceMetrics.metric_date),
+    }
+
+
+def recent_series(session: Session, days: int = 14, end: date | None = None) -> dict:
+    """Trailing daily series for the Garmin-native mini-visualisations.
+
+    Returns one list per metric (oldest → newest, ending at `end` or today),
+    aligned on the same dates, with None for a day that has no value. Used by
+    the Today view to render sparklines and goal rings for the watch-native
+    indicators. Missing days are left as None (not interpolated) so the
+    visualisation can show gaps honestly.
+    """
+    end = end or date.today()
+    start = end - timedelta(days=days - 1)
+
+    wellness = session.execute(
+        select(DailyWellness)
+        .where(
+            DailyWellness.user_id == USER_ID,
+            DailyWellness.calendar_date >= start,
+            DailyWellness.calendar_date <= end,
+        )
+        .order_by(DailyWellness.calendar_date)
+    ).scalars().all()
+    metrics = session.execute(
+        select(DeviceMetrics)
+        .where(
+            DeviceMetrics.user_id == USER_ID,
+            DeviceMetrics.metric_date >= start,
+            DeviceMetrics.metric_date <= end,
+        )
+        .order_by(DeviceMetrics.metric_date)
+    ).scalars().all()
+
+    w = {r.calendar_date: r for r in wellness}
+    dm = {r.metric_date: r for r in metrics}
+
+    dates, rhr, stress, bb_wake, steps, intensity, spo2, resp, vo2 = [], [], [], [], [], [], [], [], []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        dates.append(d.isoformat())
+        wd = w.get(d)
+        rhr.append(wd.resting_heart_rate if wd else None)
+        stress.append(wd.avg_stress if wd and wd.avg_stress is not None and wd.avg_stress >= 0 else None)
+        bb_wake.append(wd.bb_at_wake if wd else None)
+        steps.append(wd.steps if wd else None)
+        intensity.append(
+            (wd.moderate_intensity_minutes or 0) + (wd.vigorous_intensity_minutes or 0)
+            if wd
+            else None
+        )
+        spo2.append(wd.avg_spo2 if wd else None)
+        resp.append(wd.avg_respiration if wd else None)
+        md = dm.get(d)
+        vo2.append(md.vo2max if md else None)
+
+    return {
+        "dates": dates,
+        "rhr": rhr,
+        "stress": stress,
+        "bb_wake": bb_wake,
+        "steps": steps,
+        "intensity": intensity,
+        "spo2": spo2,
+        "respiration": resp,
+        "vo2max": vo2,
+    }
+
+
 def journal_for(session: Session, day: date) -> dict:
     """Today's journal entry (raw responses + factor registry for the form)."""
     entry = get_entry(session, day)
@@ -405,3 +531,78 @@ def intraday_for(session: Session, day: date) -> dict:
         )
 
     return {"date": day.isoformat(), "series": series, "activity_windows": wins}
+
+
+def _parse_report_time(value: str) -> tuple[int, int]:
+    """'07:30' → (7, 30); falls back to (7, 30) on garbage."""
+    try:
+        hour, minute = value.split(":")
+        return int(hour), int(minute)
+    except (ValueError, AttributeError):
+        return 7, 30
+
+
+def sleep_status(session: Session, day: date, now: datetime | None = None) -> str:
+    """Whether last night's sleep is resolved for the morning report.
+
+    Returns one of:
+      "synced"  — a SleepSession row exists for `day`; the report can show it.
+      "absent"  — no sleep row, and we're past the grace window (SIGNAL_REPORT_GRACE_MINUTES
+                  after the report time): the watch almost certainly didn't record sleep, so
+                  the report proceeds without it.
+      "pending" — no sleep row yet and still within the grace window: Garmin may be lagging
+                  behind on syncing, so the report should wait.
+
+    `day` is the calendar date the report is for (the wake-up date).
+    """
+    row = session.execute(
+        select(SleepSession).where(
+            SleepSession.user_id == USER_ID, SleepSession.calendar_date == day
+        )
+    ).scalar_one_or_none()
+    if row is not None:
+        return "synced"
+    settings = get_settings()
+    tz = ZoneInfo(settings.TIMEZONE)
+    now = now or datetime.now(tz)
+    hour, minute = _parse_report_time(settings.SIGNAL_REPORT_TIME)
+    report_dt = datetime.combine(day, time(hour, minute), tzinfo=tz)
+    grace_min = int(getattr(settings, "SIGNAL_REPORT_GRACE_MINUTES", 0) or 0)
+    if grace_min <= 0:
+        return "absent"
+    return "absent" if now >= report_dt + timedelta(minutes=grace_min) else "pending"
+
+
+def latest_sync_time(session: Session) -> datetime | None:
+    """The most recent successful sync across all streams (UTC).
+
+    Reads the max last_sync_at from sync_state, which is touched on every
+    successful per-stream sync. Returns None when nothing has synced yet.
+    """
+    return session.execute(
+        select(SyncState.last_sync_at)
+        .where(SyncState.user_id == USER_ID)
+        .order_by(SyncState.last_sync_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def latest_morning_report(session: Session) -> dict | None:
+    """The most recent Signal morning briefing (the advice sent this morning).
+
+    Returns None when no morning report has been persisted yet (e.g. a fresh
+    install before the first scheduled send).
+    """
+    row = session.execute(
+        select(MorningReport)
+        .where(MorningReport.user_id == USER_ID)
+        .order_by(MorningReport.report_date.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    return {
+        "date": row.report_date.isoformat(),
+        "briefing": row.briefing,
+        "commentary": row.commentary,
+    }

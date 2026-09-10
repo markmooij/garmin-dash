@@ -3,14 +3,33 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, date, datetime, time
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
 
 from ..db import session_scope
+from ..db.models import MorningReport
 from ..settings import get_settings
-from .briefing import build_briefing, route_command
+from ..web.query import sleep_status
+from .briefing import build_morning_report, route_command
 from .journal_commands import build_reminder_text, build_weekly_digest
 
 
 logger = logging.getLogger("garmin_dash.messaging.loop")
+
+
+def _today() -> date:
+    return datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
+
+
+def _parse_report_time(value: str) -> tuple[int, int]:
+    """'07:30' → (7, 30); falls back to (7, 30) on garbage."""
+    try:
+        hour, minute = value.split(":")
+        return int(hour), int(minute)
+    except (ValueError, AttributeError):
+        return 7, 30
 
 
 def get_messenger():
@@ -37,24 +56,107 @@ def get_messenger():
     )
 
 
-def run_morning_report() -> None:
-    """Send the daily briefing (scheduler job at SIGNAL_REPORT_TIME)."""
+def run_morning_report() -> str:
+    """Send the daily briefing once last night's sleep is resolved.
+
+    The briefing is deferred while sleep is still pending (Garmin lagging) and
+    only sent when the sleep data has synced, or once the grace window has
+    passed (the watch didn't record sleep). The briefing (and its coach advice
+    line) is persisted to morning_reports before the send so the dashboard can
+    show what was sent even if Signal fails; sent_at is set only on a
+    successful delivery so the scheduler retries a failed send.
+
+    Returns "sent", "pending" (sleep not resolved yet — retry later), or
+    "skipped" (Signal disabled / no recipient).
+    """
     settings = get_settings()
     messenger = get_messenger()
     if messenger is None:
         logger.info("Morning report skipped (Signal disabled)")
-        return
+        return "skipped"
     recipient = settings.SIGNAL_RECIPIENT
     if not recipient:
         logger.warning("SIGNAL_RECIPIENT unset — morning report skipped")
-        return
+        return "skipped"
+
+    now = datetime.now(ZoneInfo(settings.TIMEZONE))
+    day = now.date()
+
+    # Don't fire before the configured report time (the cron window may start
+    # earlier than the exact report minute).
+    hour, minute = _parse_report_time(settings.SIGNAL_REPORT_TIME)
+    report_dt = datetime.combine(day, time(hour, minute), tzinfo=now.tzinfo)
+    if now < report_dt:
+        logger.info(
+            "Morning report: before report time (%s), deferring", settings.SIGNAL_REPORT_TIME
+        )
+        return "pending"
+
     with session_scope() as session:
-        text = build_briefing(session, with_commentary=True)
+        if _already_sent(session, day):
+            logger.info("Morning report already sent for %s", day)
+            return "sent"
+        status = sleep_status(session, day, now=now)
+        if status == "pending":
+            logger.info("Morning report: sleep still pending for %s, deferring", day)
+            return "pending"
+        text, commentary = build_morning_report(session, day, sleep_status=status)
+        _persist_morning_report(session, text, commentary, sent_at=None)
     try:
         messenger.send_message(recipient, text)
         logger.info("Morning report sent to %s", recipient)
+        with session_scope() as session:
+            _mark_sent(session, day)
     except Exception:  # noqa: BLE001
         logger.exception("Morning report send failed")
+    return "sent"
+
+
+def _persist_morning_report(
+    session, text: str, commentary: str | None, sent_at: datetime | None = None
+) -> None:
+    """Upsert today's morning briefing into morning_reports (idempotent)."""
+    day = _today()
+    row = session.execute(
+        select(MorningReport).where(
+            MorningReport.user_id == 1, MorningReport.report_date == day
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        session.add(
+            MorningReport(
+                user_id=1,
+                report_date=day,
+                briefing=text,
+                commentary=commentary,
+                sent_at=sent_at,
+            )
+        )
+    else:
+        row.briefing = text
+        row.commentary = commentary
+        row.sent_at = sent_at
+
+
+def _already_sent(session, day: date) -> bool:
+    """True when today's briefing was actually delivered (sent_at set)."""
+    row = session.execute(
+        select(MorningReport).where(
+            MorningReport.user_id == 1, MorningReport.report_date == day
+        )
+    ).scalar_one_or_none()
+    return row is not None and row.sent_at is not None
+
+
+def _mark_sent(session, day: date) -> None:
+    """Record that today's briefing was delivered over Signal."""
+    row = session.execute(
+        select(MorningReport).where(
+            MorningReport.user_id == 1, MorningReport.report_date == day
+        )
+    ).scalar_one_or_none()
+    if row is not None:
+        row.sent_at = datetime.now(UTC)
 
 
 def run_journal_reminder() -> None:

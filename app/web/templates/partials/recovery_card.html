@@ -1,11 +1,13 @@
 {# Recovery card: SVG dial 0-100, band colored #}
+{% from "partials/_abbr.html" import abbr %}
 {% set rec = data.recovery %}
 {% set score = rec.score %}
+{% set avg = avg.recovery %}
 <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
   <div class="flex items-baseline justify-between">
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Herstel</h2>
     {% if rec.hrv_used %}
-      <span class="text-[10px] text-zinc-500">met HRV</span>
+      <span class="text-[10px] text-zinc-500">met {{ abbr('HRV', 'Hartslagvariatie — variatie tussen opeenvolgende hartslagen, \'s nachts. Hoge HRV = goed herstel.', 'hrv-hartslagvariatie') }}</span>
     {% else %}
       <span class="text-[10px] text-zinc-500" title="Venu 2 biedt geen HRV — RHR + slaap + stress">HRV n.v.t. (fallback)</span>
     {% endif %}
@@ -23,13 +25,16 @@
       </svg>
       <div>
         <div class="text-4xl font-bold" style="color: {{ color }}">{{ '%.0f'|format(score) }}</div>
+        {% if avg is not none %}
+          <div class="text-[11px] text-zinc-500 mt-0.5">gem. {{ '%.0f'|format(avg) }} ({{ days }}d)</div>
+        {% endif %}
         <div class="text-xs text-zinc-500 mt-1">
           {% if band == 'green' %}Klaar voor belasting{% elif band == 'yellow' %}Matig herstel{% else %}Verhoogde vermoeidheid{% endif %}
         </div>
         <div class="mt-3 text-[11px] text-zinc-500 space-y-0.5">
           {% for k, v in (rec.components or {}).items() %}
             <div class="flex justify-between gap-4">
-              <span>{{ {'rhr': 'RHR', 'sleep': 'Slaap', 'stress': 'Stress', 'hrv': 'HRV'}[k] or k }}</span>
+              <span>{% if k == 'rhr' %}{{ abbr('RHR', 'Rusthartslag — hartslag in rust, \'s nachts gemeten door de Venu 2.', 'rhr-rusthartslag') }}{% elif k == 'sleep' %}Slaap{% elif k == 'stress' %}Stress{% elif k == 'hrv' %}{{ abbr('HRV', 'Hartslagvariatie — variatie tussen opeenvolgende hartslagen, \'s nachts.', 'hrv-hartslagvariatie') }}{% else %}{{ k }}{% endif %}</span>
               <span class="text-zinc-300">{{ '%.0f'|format(v) }}</span>
             </div>
           {% endfor %}

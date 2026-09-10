@@ -1,6 +1,7 @@
 {# Sleep card: score + stage stacked bar #}
 {% set s = data.sleep %}
 {% set total = (s.deep_s or 0) + (s.rem_s or 0) + (s.light_s or 0) + (s.awake_s or 0) %}
+{% set avg_sleep = avg.sleep_score %}
 <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
   <div class="flex items-baseline justify-between">
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Slaap</h2>
@@ -15,6 +16,9 @@
       <div class="text-4xl font-bold text-zinc-100">{{ '%.0f'|format(s.score) }}</div>
       <div class="text-xs text-zinc-500 pb-1">{{ (total / 3600)|round(1) }} u totaal</div>
     </div>
+    {% if avg_sleep is not none %}
+      <div class="text-[11px] text-zinc-500 mt-0.5">gem. {{ '%.0f'|format(avg_sleep) }} ({{ days }}d)</div>
+    {% endif %}
     <div class="mt-3 h-2.5 rounded-full overflow-hidden flex">
       {% set pct = 100.0 / total if total > 0 else 0 %}
       <div class="bg-indigo-500" style="width: {{ s.deep_s * pct }}%" title="Diep"></div>

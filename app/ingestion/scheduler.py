@@ -77,11 +77,19 @@ def run_sync_pass() -> None:
 
 
 def run_morning_report_job() -> None:
-    """Send the Signal morning briefing (no-op when Signal is disabled)."""
+    """Send the Signal morning briefing (no-op when Signal is disabled).
+
+    The job is scheduled on an interval across the morning window so a
+    late-arriving sleep sync is still picked up; run_morning_report() itself
+    no-ops before the report time, while sleep is pending, and once the
+    report has been sent.
+    """
     try:
         from ..messaging.loop import run_morning_report
 
-        run_morning_report()
+        status = run_morning_report()
+        if status == "pending":
+            logger.info("Morning report deferred (sleep pending) — will retry")
     except Exception:  # noqa: BLE001
         logger.exception("Morning report job failed")
 
@@ -148,9 +156,18 @@ def schedule() -> None:
 
     if settings.SIGNAL_ENABLED:
         hour, minute = _parse_report_time(settings.SIGNAL_REPORT_TIME)
+        grace_min = int(settings.SIGNAL_REPORT_GRACE_MINUTES) or 0
+        retry_min = int(settings.SIGNAL_REPORT_RETRY_MINUTES) or 15
+        # Run the morning report every `retry_min` across the morning window so
+        # a late-arriving sleep sync is still picked up. The job itself no-ops
+        # before the report time, while sleep is pending, and once the report
+        # has been sent (see run_morning_report). The window spans the report
+        # hour through the grace period.
+        start_hour = hour
+        end_hour = min(23, hour + max(1, (grace_min + 59) // 60))
         scheduler.add_job(
             run_morning_report_job,
-            trigger=CronTrigger(hour=hour, minute=minute),
+            trigger=CronTrigger(hour=f"{start_hour}-{end_hour}", minute=f"*/{retry_min}"),
             id="signal-morning-report",
             replace_existing=True,
             coalesce=True,

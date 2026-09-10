@@ -11,6 +11,14 @@ the insight's exact stats. The stats shift daily as new data lands (the
 window slides), so the hash changes and the interpretation is regenerated;
 while the numbers are unchanged the cached text is reused verbatim — the
 page never hammers the LLM.
+
+Failed attempts are cached too. An insight the model cannot describe
+groundedly used to be retried on every single page load, costing a
+multi-second round-trip each time for a reply that was dropped again; the
+negative cache turns that into a single lookup. Insights whose effect is
+negligible (|d| < INSIGHTS_LLM_MIN_EFFECT) are never sent to the LLM at
+all — there is nothing to explain, and asking invites exactly the kind of
+ungrounded number the grounding check throws away.
 """
 
 from __future__ import annotations
@@ -31,6 +39,27 @@ if TYPE_CHECKING:
     from ..journal.insights import Insight
 
 logger = logging.getLogger("garmin_dash.coach.interpretation")
+
+
+def _is_negligible(insight: Insight, min_effect: float) -> bool:
+    """True when the insight is too small to be worth an LLM round-trip.
+
+    Deliberately conservative: `_cohens_d` returns a sentinel 0.0 both for a
+    genuine zero effect and for "cannot compute" (fewer than 2 points in a
+    group, or zero pooled variance). Keying the skip on d alone would
+    therefore suppress the explanation for a *huge* but zero-variance effect
+    (e.g. every exposed day 30, every baseline day 80). So a small d only
+    counts as negligible when the mean difference is small as well — if the
+    means are far apart there is something real to explain, whatever d says.
+    """
+    if abs(insight.cohens_d) >= min_effect:
+        return False
+    return abs(insight.diff) < _NEGLIGIBLE_DIFF_POINTS
+
+
+# Outcome scores are 0-100; a gap under this many points is noise-level and
+# is what the card already labels "verwaarloosbaar".
+_NEGLIGIBLE_DIFF_POINTS = 2.0
 
 
 def _data_hash(insight: Insight) -> str:
@@ -57,8 +86,13 @@ def _context_text(insight: Insight) -> str:
     )
 
 
-def _interpret_one(client, insight: Insight) -> str | None:
-    """One grounded LLM interpretation. None on error or ungrounded reply."""
+def _interpret_one(client, insight: Insight) -> tuple[str | None, str | None]:
+    """One grounded LLM interpretation.
+
+    Returns (text, failure): (text, None) on success, or (None, reason)
+    where reason is "error" or "ungrounded". The reason is surfaced so the
+    caller can negative-cache it instead of retrying every page load.
+    """
     from .client import _grounded_reply
 
     context = _context_text(insight)
@@ -68,8 +102,7 @@ def _interpret_one(client, insight: Insight) -> str | None:
         "voor de gebruiker. Gebruik alleen bovenstaande cijfers, verzin niets en "
         "noem geen getallen die er niet staan."
     )
-    reply, _failure = _grounded_reply(client, context, prompt)
-    return reply
+    return _grounded_reply(client, context, prompt)
 
 
 def interpret_insights(
@@ -83,11 +116,16 @@ def interpret_insights(
 
     Reuses cached text for unchanged stats, generates at most `max_new`
     (default INSIGHTS_LLM_MAX_PER_LOAD) fresh ones per call and stores them,
-    and leaves the rest without an entry (the UI shows a subtle placeholder
-    that fills in on a later load). Returns {} when the LLM is disabled.
+    and leaves the rest without an entry (the UI simply omits the block).
+    Returns {} when the LLM is disabled.
+
+    Two guards keep this off the slow path: insights with a negligible
+    effect are skipped outright, and an attempt that failed for these exact
+    numbers is not repeated (see the module docstring).
     """
     settings = get_settings()
     max_new = settings.INSIGHTS_LLM_MAX_PER_LOAD if max_new is None else max_new
+    min_effect = settings.INSIGHTS_LLM_MIN_EFFECT
     from .client import get_client
 
     client = get_client()
@@ -98,34 +136,51 @@ def interpret_insights(
     generated = 0
     for idx, insight in enumerate(insights):
         h = _data_hash(insight)
-        cached = session.execute(
-            select(InsightInterpretation.interpretation).where(
+        row = session.execute(
+            select(
+                InsightInterpretation.interpretation,
+                InsightInterpretation.failure,
+            ).where(
                 InsightInterpretation.user_id == user_id,
                 InsightInterpretation.factor_key == insight.factor_key,
                 InsightInterpretation.outcome_key == insight.outcome_key,
                 InsightInterpretation.data_hash == h,
             )
-        ).scalar_one_or_none()
-        if cached:
-            out[idx] = cached
+        ).first()
+        if row is not None:
+            cached, failure = row
+            if cached:
+                out[idx] = cached
+            # A recorded failure means "already tried these exact numbers and
+            # the reply was unusable" — don't burn another round-trip on it.
             continue
+        if _is_negligible(insight, min_effect):
+            continue  # negligible effect — nothing worth an LLM call
         if generated >= max_new:
             continue  # leave a placeholder; next load fills more
-        text = _interpret_one(client, insight)
-        if text:
-            session.add(
-                InsightInterpretation(
-                    user_id=user_id,
-                    factor_key=insight.factor_key,
-                    outcome_key=insight.outcome_key,
-                    data_hash=h,
-                    interpretation=text,
-                )
+        text, failure = _interpret_one(client, insight)
+        session.add(
+            InsightInterpretation(
+                user_id=user_id,
+                factor_key=insight.factor_key,
+                outcome_key=insight.outcome_key,
+                data_hash=h,
+                interpretation=text,
+                failure=failure,
             )
+        )
+        generated += 1
+        if text:
             out[idx] = text
-            generated += 1
+        else:
+            logger.info(
+                "Interpretation unavailable (%s) for %s→%s — cached to avoid retry",
+                failure,
+                insight.factor_key,
+                insight.outcome_key,
+            )
     if generated:
-        session.commit()  # deliberate side effect: persist the new interpretations
+        session.commit()  # deliberate side effect: persist attempts (incl. failures)
     return out
 
 

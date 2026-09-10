@@ -1,5 +1,7 @@
-{# Garmin-native strip: what the watch itself reports #}
+{# Garmin-native strip: what the watch itself reports, as small visual indicators #}
+{% from "partials/_abbr.html" import abbr %}
 {% set w = data.wellness %}
+{% set recent = recent or {} %}
 <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
   <div class="flex items-baseline justify-between">
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Garmin-native</h2>
@@ -8,43 +10,80 @@
   {% if not w.rhr and not w.steps %}
     <p class="mt-3 text-sm text-zinc-500">Geen wellness-data voor deze dag.</p>
   {% else %}
-    <div class="mt-3 grid grid-cols-4 gap-3 text-center">
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.rhr or '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">RHR</div>
+    <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+      {# ── RHR: sparkline (trend is the signal) ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="text-lg font-semibold" style="color: {{ rhr_color(w.rhr) }}">{{ w.rhr or '–' }}</div>
+        <div class="w-full mt-1">{{ sparkline(recent.rhr or [], rhr_color(w.rhr)) }}</div>
+        <div class="text-[10px] text-zinc-500 mt-1">{{ abbr('RHR', 'Rusthartslag — hartslag in rust, \'s nachts gemeten door de Venu 2.', 'rhr-rusthartslag') }}</div>
+        {% if avg.rhr is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.0f'|format(avg.rhr) }}</div>{% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.avg_stress if w.avg_stress is not none and w.avg_stress >= 0 else '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">stress gem.</div>
+
+      {# ── Stress: gauge with Garmin zones ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="text-lg font-semibold" style="color: {{ stress_color(w.avg_stress if w.avg_stress is not none and w.avg_stress >= 0 else none) }}">{{ w.avg_stress if w.avg_stress is not none and w.avg_stress >= 0 else '–' }}</div>
+        <div class="w-full mt-1">{{ stress_gauge(w.avg_stress if w.avg_stress is not none and w.avg_stress >= 0 else none) }}</div>
+        <div class="text-[10px] text-zinc-500 mt-1">stress gem.</div>
+        {% if avg.stress is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.0f'|format(avg.stress) }}</div>{% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.bb_most_recent if w.bb_most_recent is not none else '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">body battery nu</div>
+
+      {# ── Body Battery: battery glyph ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="flex items-end gap-2">
+          <div class="text-lg font-semibold" style="color: {{ bb_color(w.bb_most_recent) }}">{{ w.bb_most_recent if w.bb_most_recent is not none else '–' }}</div>
+          {{ battery(w.bb_most_recent, bb_color(w.bb_most_recent)) }}
+        </div>
+        <div class="text-[10px] text-zinc-500 mt-1">{{ abbr('Body Battery', 'Garmins energiemeter op basis van HRV, stress en activiteit. Schat je energiereserve.', 'body-battery') }}</div>
         {% if w.bb_at_wake is not none %}
           <div class="text-[10px] text-zinc-600">bij ontwaken {{ w.bb_at_wake }}</div>
         {% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ data.vo2max if data.vo2max is not none else '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">VO₂max</div>
+
+      {# ── VO₂max: gauge with fitness bands ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="text-lg font-semibold" style="color: {{ vo2_color(data.vo2max) }}">{{ data.vo2max if data.vo2max is not none else '–' }}</div>
+        <div class="w-full mt-1">{{ vo2_gauge(data.vo2max) }}</div>
+        <div class="text-[10px] text-zinc-500 mt-1">{{ abbr('VO₂max', 'Maximale zuurstofopname — schatting van je aerobe conditie, berekend door Garmin.', 'vo2max') }}</div>
+        {% if avg.vo2max is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.1f'|format(avg.vo2max) }}</div>{% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.steps or '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">stappen</div>
-      </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">
-          {{ (w.moderate_min or 0) + (w.vigorous_min or 0) }}
+
+      {# ── Steps: goal ring → 10k ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        {% set steps_pct = ((w.steps or 0) / 10000 * 100) %}
+        <div class="flex items-center gap-2">
+          <div class="text-lg font-semibold" style="color: {{ steps_color(steps_pct) }}">{{ w.steps or '–' }}</div>
+          {{ ring(steps_pct, steps_color(steps_pct)) }}
         </div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">intensiteit min</div>
+        <div class="text-[10px] text-zinc-500 mt-1">stappen <span class="text-zinc-600">/10k</span></div>
+        {% if avg.steps is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.0f'|format(avg.steps) }}</div>{% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.avg_spo2 if w.avg_spo2 is not none else '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">SpO₂</div>
+
+      {# ── Intensity min: goal ring → 30 min/day ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        {% set int_min = (w.moderate_min or 0) + (w.vigorous_min or 0) %}
+        {% set int_pct = (int_min / 30 * 100) %}
+        <div class="flex items-center gap-2">
+          <div class="text-lg font-semibold" style="color: {{ intensity_color(int_pct) }}">{{ int_min }}</div>
+          {{ ring(int_pct, intensity_color(int_pct)) }}
+        </div>
+        <div class="text-[10px] text-zinc-500 mt-1">intensiteit min <span class="text-zinc-600">/30</span></div>
+        {% if avg.intensity_min is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.0f'|format(avg.intensity_min) }}</div>{% endif %}
       </div>
-      <div class="rounded-lg bg-zinc-800/60 py-3">
-        <div class="text-lg font-semibold text-zinc-100">{{ w.avg_respiration if w.avg_respiration is not none else '–' }}</div>
-        <div class="text-[10px] text-zinc-500 mt-0.5">ademhaling</div>
+
+      {# ── SpO₂: gauge with clinical zones ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="text-lg font-semibold" style="color: {{ spo2_color(w.avg_spo2) }}">{{ w.avg_spo2 if w.avg_spo2 is not none else '–' }}</div>
+        <div class="w-full mt-1">{{ spo2_gauge(w.avg_spo2) }}</div>
+        <div class="text-[10px] text-zinc-500 mt-1">{{ abbr('SpO₂', 'Zuurstofsaturatie in het bloed, gemeten tijdens de slaap.', 'spo2-zuurstofsaturatie') }}</div>
+        {% if avg.spo2 is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.1f'|format(avg.spo2) }}</div>{% endif %}
+      </div>
+
+      {# ── Respiration: gauge with clinical zones ── #}
+      <div class="rounded-lg bg-zinc-800/60 p-3 flex flex-col items-center">
+        <div class="text-lg font-semibold" style="color: {{ resp_color(w.avg_respiration) }}">{{ w.avg_respiration if w.avg_respiration is not none else '–' }}</div>
+        <div class="w-full mt-1">{{ resp_gauge(w.avg_respiration) }}</div>
+        <div class="text-[10px] text-zinc-500 mt-1">{{ abbr('ademhaling', 'Gemiddelde ademhalingsfrequentie per minuut, \'s nachts gemeten.', 'ademhaling') }}</div>
+        {% if avg.respiration is not none %}<div class="text-[10px] text-zinc-600">gem {{ '%.1f'|format(avg.respiration) }}</div>{% endif %}
       </div>
     </div>
   {% endif %}

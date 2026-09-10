@@ -16,7 +16,7 @@
     <p class="text-xs text-zinc-600 mt-2">
       Elke factor heeft &ge;{{ data.min_samples }} gelogde dagen mét én zonder nodig
       (binnen een venster van {{ data.window_days }} dagen) voordat een correlatie
-      betrouwbaar genoeg is om te tonen. Log dagelijks via <a href="/journal" class="text-emerald-400">/journal</a>
+      betrouwbaar genoeg is om te tonen. Log dagelijks via <a href="{{ url('/journal') }}" class="text-emerald-400">/journal</a>
       of Signal <code class="text-zinc-400">/log</code>.
     </p>
   </div>
@@ -26,7 +26,7 @@
     {% for key, label in [('date', 'Datum'), ('effect', 'Effect'), ('alphabet', 'Alfabet')] %}
       {% set active = data.sort == key %}
       {% set dir = 'asc' if (active and data.direction == 'desc') else 'desc' %}
-      <a href="/insights?sort={{ key }}&dir={{ dir }}"
+      <a href="{{ url('/insights?sort=' ~ key ~ '&dir=' ~ dir) }}"
          class="px-2.5 py-1 rounded-md border {% if active %}bg-zinc-800 border-zinc-600 text-zinc-100{% else %}bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200{% endif %}">
         {{ label }}
         {% if active %}<span class="text-zinc-400">{{ '↑' if data.direction == 'asc' else '↓' }}</span>{% endif %}

@@ -5,13 +5,13 @@
 {% block content %}
 <div class="flex items-center justify-between mb-5">
   <div class="flex items-center gap-3">
-    <a href="/journal?date={{ prev }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
+    <a href="{{ url('/journal?date=' ~ prev) }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">←</a>
     <h1 class="text-xl font-semibold">
       Dagboek · {{ day.strftime('%A %d %B %Y') }}
     </h1>
-    <a href="/journal?date={{ next }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
+    <a href="{{ url('/journal?date=' ~ next) }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">→</a>
   </div>
-  <a href="/journal/factors" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">
+  <a href="{{ url('/journal/factors') }}" class="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 text-sm">
     Factoren beheren
   </a>
 </div>
@@ -21,7 +21,7 @@
     <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">
       Factoren voor {{ data.date }}
     </h2>
-    <form method="post" action="/journal" class="space-y-3">
+    <form method="post" action="{{ url('/journal') }}" class="space-y-3">
       <input type="hidden" name="entry_date" value="{{ data.date }}">
       {% for f in data.factors %}
         {% set current = data.responses.get(f.key) %}

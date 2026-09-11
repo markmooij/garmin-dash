@@ -280,6 +280,9 @@ def test_run_journal_reminder_asks_at_most_three_factors(seeded: Session, monkey
     monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
     monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
     monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
+    # Freeze to a day whose date doesn't contain "11", so the "no nag line"
+    # assertion below isn't tripped by the header date (e.g. "11 sep").
+    _freeze(monkeypatch, datetime(2026, 8, 9, 20, 30, tzinfo=ZoneInfo("Europe/Amsterdam")))
     run_journal_reminder()
     _recipient, text = m.sent[0]
     asked = [f.key for f in FACTORS if f"{f.key} —" in text]
@@ -319,7 +322,7 @@ class _ReportSettings:
 
 
 def _freeze(monkeypatch, moment: datetime):
-    """Pin datetime.now() inside loop.py and query.py to `moment`."""
+    """Pin datetime.now() inside loop.py, query.py and journal_commands.py."""
 
     class _DT(datetime):
         @classmethod
@@ -328,6 +331,7 @@ def _freeze(monkeypatch, moment: datetime):
 
     monkeypatch.setattr("app.messaging.loop.datetime", _DT)
     monkeypatch.setattr("app.web.query.datetime", _DT)
+    monkeypatch.setattr("app.messaging.journal_commands.datetime", _DT)
 
 
 def _wire_report(monkeypatch, session: Session, messenger):

@@ -64,24 +64,38 @@ def get_client():
 
 
 def _chat(client, prompt: str) -> str | None:
+    """One chat call, retrying once when the model returns empty content.
+
+    Reasoning models can spend their whole token budget on internal reasoning
+    and emit nothing (finish_reason=length). A single retry usually recovers
+    a usable reply; if the model still returns nothing we give up and let the
+    caller treat it as an unavailable coach.
+    """
     settings = get_settings()
-    try:
-        resp = client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=settings.LLM_MAX_TOKENS,
-            temperature=settings.LLM_TEMPERATURE,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("LLM request failed")
-        return None
-    choices = getattr(resp, "choices", None) or []
-    if not choices:
-        return None
-    return (choices[0].message.content or "").strip() or None
+    for attempt in range(2):
+        try:
+            resp = client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=settings.LLM_MAX_TOKENS,
+                temperature=settings.LLM_TEMPERATURE,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("LLM request failed")
+            return None
+        choices = getattr(resp, "choices", None) or []
+        if not choices:
+            return None
+        content = (choices[0].message.content or "").strip()
+        if content:
+            return content
+        if attempt == 0:
+            logger.warning("LLM returned empty content (finish_reason=%s) — retrying",
+                           getattr(choices[0], "finish_reason", None))
+    return None
 
 
 def _grounded_reply(client, context_text: str, prompt: str) -> tuple[str | None, str | None]:

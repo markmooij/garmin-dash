@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str | None = None
     LLM_API_KEY: str | None = None
     LLM_MODEL: str = "gpt-4o"
-    LLM_MAX_TOKENS: int = 500
+    # Reasoning models spend a large share of max_tokens on internal reasoning
+    # before emitting content; a too-low budget can exhaust the window and
+    # return empty content (finish_reason=length), silently dropping the coach
+    # line. 1024 leaves room for both reasoning and the reply.
+    LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.3
     # Trailing window of computed_scores/journal fed to the coach as context
     LLM_CONTEXT_WINDOW_DAYS: int = 7

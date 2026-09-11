@@ -275,3 +275,37 @@ def test_get_client_enabled_without_base_url_returns_none(monkeypatch):
     from app.coach.client import get_client
 
     assert get_client() is None
+
+
+def test_chat_retries_on_empty_content():
+    """A reasoning model that spends its whole budget on reasoning and emits
+    nothing (finish_reason=length) must be retried, not silently dropped."""
+    from app.coach.client import _chat
+
+    calls = []
+
+    def _reply(kwargs):  # noqa: ARG001
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return ""  # first attempt: empty content
+        return "Herstel 72 vandaag, mooi resultaat."
+
+    client = FakeClient(_reply)
+    result = _chat(client, "prompt")
+    assert result == "Herstel 72 vandaag, mooi resultaat."
+    assert len(calls) == 2  # retried once
+
+
+def test_chat_returns_none_when_always_empty():
+    """If the model returns empty content on both attempts, give up (None)."""
+    from app.coach.client import _chat
+
+    calls = []
+
+    def _reply(kwargs):  # noqa: ARG001
+        calls.append(kwargs)
+        return ""
+
+    client = FakeClient(_reply)
+    assert _chat(client, "prompt") is None
+    assert len(calls) == 2  # tried twice, then gave up

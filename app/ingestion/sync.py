@@ -327,14 +327,21 @@ def sync_intraday(
                 _save_raw(session, "body_battery", dstr, bb_raw)
             else:
                 entries = []
-            # values are [ts, "MEASURED", value, drain] or [ts, value]
+            # values are [ts, "MEASURED", value, drain] or [ts, value].
+            # Garmin emits [ts, None] placeholders for a day with no data yet
+            # (e.g. today before the watch syncs) — skip those instead of
+            # crashing on float(None), matching the stress/heart_rate guards.
             batches["body_battery"] = []
             for item in entries:
                 for row in item.get("bodyBatteryValuesArray") or []:
                     if len(row) >= 3:
-                        batches["body_battery"].append((row[0], float(row[2])))
+                        val = row[2]
                     elif len(row) == 2:
-                        batches["body_battery"].append((row[0], float(row[1])))
+                        val = row[1]
+                    else:
+                        continue
+                    if val is not None:
+                        batches["body_battery"].append((row[0], float(val)))
         except Exception as e:  # noqa: BLE001
             _touch_sync(session, "intraday_body_battery", day, error=str(e))
 

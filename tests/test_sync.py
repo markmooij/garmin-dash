@@ -174,3 +174,40 @@ def test_missing_day_does_not_raise(session, tmp_path):  # noqa: ARG001
     assert session.query(DailyWellness).count() == 0
     errs = [s.error for s in session.query(SyncState).all() if s.error]
     assert any("boom" in (e or "") for e in errs)
+
+
+def test_intraday_skips_none_body_battery_values(session):
+    """Garmin emits [ts, None] placeholders for a day with no data yet (e.g.
+    today before the watch syncs); sync_intraday must skip them instead of
+    crashing on float(None)."""
+    class NoneBodyBatteryAdapter(FakeAdapter):
+        def get_stress_data(self, cdate):  # noqa: ARG002
+            self.calls.append(f"stress_data:{cdate}")
+            return {}
+
+        def get_heart_rates(self, cdate):  # noqa: ARG002
+            self.calls.append(f"heart_rates:{cdate}")
+            return {}
+
+        def get_body_battery(self, start, end):
+            self.calls.append(f"body_battery:{start}:{end}")
+            return [{"bodyBatteryValuesArray": [
+                [1789257600001, None],
+                [1789257600002, None],
+                [1789257600003, 55],
+            ]}]
+
+    day = date(2026, 9, 13)
+    adapter = NoneBodyBatteryAdapter("2026-09-13")
+    sync_intraday(session, adapter, day)
+    session.commit()
+
+    bb = session.query(IntradaySeries).filter_by(kind="body_battery").all()
+    assert len(bb) == 1
+    assert bb[0].value == 55.0
+    # no crash recorded for the stream
+    errs = [
+        s.error for s in session.query(SyncState).all()
+        if s.stream == "intraday_body_battery"
+    ]
+    assert all(e is None for e in errs)

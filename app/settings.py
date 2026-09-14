@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # Signal Messenger (libs/signal_messenger)
     SIGNAL_CLI_API_URL: str = "http://localhost:8080"
     SIGNAL_CLI_TOKEN: str | None = None
+    # HTTP timeout for Signal API calls. signal-cli does crypto per message and
+    # can take 20-40s to answer; the default 15s client timeout made the
+    # morning-report send time out *after* Signal had already delivered the
+    # message, so sent_at was never set and the job re-sent on the next tick
+    # (duplicate messages). Keep this comfortably above the slowest observed
+    # send/receive so a delivered message is acknowledged and not re-sent.
+    SIGNAL_TIMEOUT: float = 60.0
     # Phase 4: flip on once the number is provisioned (see ROADMAP)
     SIGNAL_ENABLED: bool = False
     SIGNAL_ACCOUNT: str | None = None  # the number registered in signal-cli

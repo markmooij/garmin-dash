@@ -17,6 +17,7 @@ from app.messaging.journal_commands import (
     log_prompt_text,
 )
 from app.messaging.loop import (
+    get_messenger,
     poll_commands,
     run_journal_reminder,
     run_morning_report,
@@ -46,6 +47,31 @@ class FakeMessenger(Messenger):
 
     def health(self) -> bool:
         return True
+
+
+def test_get_messenger_uses_signal_timeout(monkeypatch):
+    """The Signal client must be built with SIGNAL_TIMEOUT, not the library
+    default (15s). signal-cli is slow enough that a short timeout makes the
+    morning-report send time out *after* Signal delivered the message, so
+    sent_at is never set and the job re-sends (duplicate messages)."""
+
+    class _Settings:
+        SIGNAL_ENABLED = True
+        SIGNAL_CLI_API_URL = "http://signal:8080"
+        SIGNAL_CLI_TOKEN = "tok"
+        SIGNAL_ACCOUNT = "+31600000000"
+        SIGNAL_TIMEOUT = 60.0
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    monkeypatch.setattr("signal_messenger.SignalRestClient", _FakeClient)
+    get_messenger()
+    assert captured["timeout"] == 60.0
 
 
 # ── briefing ───────────────────────────────────────────────────────────

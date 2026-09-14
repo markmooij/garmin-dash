@@ -53,6 +53,10 @@ def get_messenger():
         base_url=settings.SIGNAL_CLI_API_URL,
         account=settings.SIGNAL_ACCOUNT,
         token=settings.SIGNAL_CLI_TOKEN,
+        # signal-cli is slow (crypto per message); a too-short timeout makes
+        # the send time out after Signal already delivered, so sent_at is never
+        # set and the job re-sends (duplicate messages).
+        timeout=settings.SIGNAL_TIMEOUT,
     )
 
 

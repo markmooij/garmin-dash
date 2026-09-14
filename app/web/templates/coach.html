@@ -22,13 +22,20 @@
       Antwoorden zijn gegrond in dezelfde cijfers als het dashboard (herstel, strain, slaap,
       dagboek, gevalideerde inzichten). De coach verzint nooit een getal of correlatie.
     </p>
-    <div class="space-y-3 mb-4 max-h-96 overflow-y-auto" x-show="history.length">
+    <div class="space-y-3 mb-4 max-h-96 overflow-y-auto" x-show="history.length" x-ref="historyBox">
       <template x-for="turn in history" :key="turn.id">
         <div>
           <div class="text-sm text-zinc-300 font-medium">Jij</div>
           <div class="text-sm text-zinc-400 mb-2" x-text="turn.question"></div>
           <div class="text-sm text-emerald-400 font-medium">Coach</div>
-          <div class="text-sm text-zinc-200 whitespace-pre-wrap" x-text="turn.answer"></div>
+          <div x-show="!turn.pending" class="text-sm text-zinc-200 whitespace-pre-wrap" x-text="turn.answer"></div>
+          <div x-show="turn.pending" x-cloak class="flex items-center gap-2 text-sm text-zinc-500 mt-1">
+            <svg class="animate-spin h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <span>Coach is aan het denken…</span>
+          </div>
         </div>
       </template>
     </div>
@@ -37,9 +44,13 @@
              class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-200"
              :disabled="loading">
       <button type="submit" :disabled="loading || !question.trim()"
-              class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-medium text-white">
+              class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-medium text-white flex items-center gap-2">
+        <svg x-show="loading" x-cloak class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
         <span x-show="!loading">Vraag</span>
-        <span x-show="loading">...</span>
+        <span x-show="loading">Bezig…</span>
       </button>
     </form>
   </div>
@@ -55,6 +66,11 @@
         if (!q || this.loading) return;
         this.loading = true;
         this.question = '';
+        // Show the question immediately with a "thinking" placeholder so the
+        // user sees the request is being processed while the LLM responds.
+        const turn = { id: Date.now(), question: q, answer: '', pending: true };
+        this.history.push(turn);
+        this.$nextTick(() => this.scrollToBottom());
         try {
           const res = await fetch(GDASH_ROOT + '/api/coach/ask', {
             method: 'POST',
@@ -62,12 +78,18 @@
             body: JSON.stringify({ question: q }),
           });
           const data = await res.json();
-          this.history.push({ id: Date.now(), question: q, answer: data.answer });
+          turn.answer = data.answer;
         } catch (e) {
-          this.history.push({ id: Date.now(), question: q, answer: 'Fout bij ophalen antwoord.' });
+          turn.answer = 'Fout bij ophalen antwoord.';
         } finally {
+          turn.pending = false;
           this.loading = false;
+          this.$nextTick(() => this.scrollToBottom());
         }
+      },
+      scrollToBottom() {
+        const box = this.$refs.historyBox;
+        if (box) box.scrollTop = box.scrollHeight;
       },
     };
   }

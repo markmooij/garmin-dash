@@ -535,6 +535,22 @@ def test_coach_ask_empty_question_400(client):
     assert r.status_code == 400
 
 
+def test_coach_view_renders_thinking_indicator_when_enabled(client, monkeypatch):
+    """The coach chat must show a clear 'thinking' cue while the LLM responds."""
+
+    class _Settings:
+        LLM_ENABLED = True
+        ROOT_PATH = ""
+
+    monkeypatch.setattr("app.web.routes.get_settings", lambda: _Settings())
+    r = client.get("/coach")
+    assert r.status_code == 200
+    assert "Coach is aan het denken" in r.text
+    assert "animate-spin" in r.text
+    assert "turn.pending" in r.text
+    assert "Bezig" in r.text
+
+
 def test_explanation_view_renders_all_metric_sections(client):
     r = client.get("/uitleg")
     assert r.status_code == 200

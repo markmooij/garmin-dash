@@ -68,8 +68,12 @@
         this.question = '';
         // Show the question immediately with a "thinking" placeholder so the
         // user sees the request is being processed while the LLM responds.
+        // Mutate via the array index (the reactive proxy) — mutating the local
+        // `turn` object would not trigger Alpine's reactivity, so the pending
+        // indicator would never be replaced by the answer.
         const turn = { id: Date.now(), question: q, answer: '', pending: true };
         this.history.push(turn);
+        const idx = this.history.length - 1;
         this.$nextTick(() => this.scrollToBottom());
         try {
           const res = await fetch(GDASH_ROOT + '/api/coach/ask', {
@@ -78,11 +82,11 @@
             body: JSON.stringify({ question: q }),
           });
           const data = await res.json();
-          turn.answer = data.answer;
+          this.history[idx].answer = data.answer;
         } catch (e) {
-          turn.answer = 'Fout bij ophalen antwoord.';
+          this.history[idx].answer = 'Fout bij ophalen antwoord.';
         } finally {
-          turn.pending = false;
+          this.history[idx].pending = false;
           this.loading = false;
           this.$nextTick(() => this.scrollToBottom());
         }

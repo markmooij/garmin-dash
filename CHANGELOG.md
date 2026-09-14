@@ -7,8 +7,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- GitHub Actions CI: lint + tests on push/PR, multi-arch image build to GHCR on
-  version tags.
 - `SECURITY.md` with the project's security policy.
 - **Editable journal factor registry** (`/journal/factors`): add, edit, or
   remove (soft-delete) journal questions from the web UI — the vocabulary is

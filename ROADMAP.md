@@ -69,7 +69,6 @@ garmin-dash/
 │   ├── docker-compose.prod.yml # app + signal-api (RPi)
 │   └── build-push.sh           # buildx amd64+arm64 → GHCR
 ├── tests/                      # pytest; metrics golden tests from captured Garmin JSON
-├── .github/workflows/          # (Phase 7) CI: lint+tests, multi-arch build & publish
 ├── Makefile                    # dev ergonomics: setup, test, lint, compose-up, build-push
 ├── pyproject.toml              # project metadata, deps, ruff/pytest config
 ├── .gitignore                  # venv, .env, *.db, garmin token files, .pi/, caches
@@ -301,8 +300,7 @@ the same server is correctly rejected). 134 app + 14 lib tests green, ruff clean
 end-to-end (✅ verified against a live OpenAI-compatible server, both Signal `/ask` and web).
 
 ### Phase 7 — Release Pipeline & Open-Source Polish
-GitHub Actions: lint+tests on push; multi-arch buildx build (`amd64`+`arm64`) → GHCR on tag;
-compose prod profile tested on the Pi; README with architecture diagram + screenshots; LICENSE
+Compose prod profile tested on the Pi; README with architecture diagram + screenshots; LICENSE
 confirmed; CHANGELOG; docs for the signal_messenger package.
 *Done when:* `git push` + tag → image lands on Pi via `docker compose pull && up -d`.
 
@@ -334,7 +332,5 @@ confirmed; CHANGELOG; docs for the signal_messenger package.
   the self-hosted-SaaS scenario — one-line change.
 - **Registry**: GHCR is the documented default (`REGISTRY=ghcr.io/<you>`); swap `REGISTRY`
   env for a self-hosted `registry:2`/Harbor if preferred.
-- **CI**: GitHub Actions (lint + tests on push, multi-arch image build on tag) is the
-  remaining Phase 7 item — see `ROADMAP.md` Phase 7.
 - **Screenshots**: README would benefit from a couple of dashboard screenshots before the
   public announcement.

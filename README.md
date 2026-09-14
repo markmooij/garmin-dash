@@ -2,6 +2,16 @@
 
 A self-hosted, open-source health & athletic-performance dashboard that turns raw Garmin Connect data (Venu 2) into a **Whoop-style experience**: Recovery score, 0–21 Strain, training-load balance, a behavioral journal with correlation insights, and an LLM coach — delivered via a local web dashboard and Signal.
 
+## Screenshots
+
+| Today | Trends |
+|:---:|:---:|
+| ![Today dashboard](docs/today_screen.png) | ![Training-load trends](docs/trend_screen.png) |
+
+| Journal | Coach |
+|:---:|:---:|
+| ![Behavioral journal](docs/dairy_screen.png) | ![LLM coach](docs/coach_screen.png) |
+
 ## Features
 
 - 📊 **Recovery Score**: 0–100 composite score based on HRV, RHR, sleep efficiency

@@ -8,6 +8,10 @@ registry namespace throughout this guide. For a public project, GHCR is
 free and the Pi can pull public images without a login; pushing from your
 dev machine needs a one-time `docker login ghcr.io` (see step 1).
 
+> ⚠️ This project is **not affiliated with Garmin** and uses Garmin's
+> unofficial/undocumented Connect API. Use at your own risk — Garmin may
+> block accounts or change/remove the API at any time.
+
 ```
 ┌─────────────────────────┐          ┌──────────────────────────────┐
 │  Dev machine (x86)      │  push   │  ghcr.io/yourname           │

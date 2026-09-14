@@ -2,6 +2,8 @@
 
 A self-hosted, open-source health & athletic-performance dashboard that turns raw Garmin Connect data (Venu 2) into a **Whoop-style experience**: Recovery score, 0–21 Strain, training-load balance, a behavioral journal with correlation insights, and an LLM coach — delivered via a local web dashboard and Signal.
 
+> ⚠️ **Disclaimer**: This project is **not affiliated with, endorsed by, or sponsored by Garmin**. It uses Garmin's unofficial/undocumented Connect API, which is not publicly documented and may violate Garmin's Terms of Service. Use at your own risk — Garmin may block accounts or change/remove the API at any time. "Garmin" is a trademark of Garmin Ltd.
+
 ## Screenshots
 
 | Today | Trends |

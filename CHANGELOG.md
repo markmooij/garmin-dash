@@ -55,4 +55,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Dashboard is LAN-bound by default; Signal and LLM integrations are explicit
   opt-ins (`SIGNAL_ENABLED`, `LLM_ENABLED`).
 
-[0.1.0]: https://github.com/yourname/garmin-dash/releases/tag/v0.1.0
+[0.1.0]: https://github.com/markmooij/garmin-dash/releases/tag/v0.1.0

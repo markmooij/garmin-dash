@@ -14,7 +14,7 @@ dev machine needs a one-time `docker login ghcr.io` (see step 1).
 
 ```
 ┌─────────────────────────┐          ┌──────────────────────────────┐
-│  Dev machine (x86)      │  push   │  ghcr.io/yourname           │
+│  Dev machine (x86)      │  push   │  ghcr.io/markmooij           │
 │  docker buildx (multi-  │ ──────► │  garmin-dash:latest           │
 │  arch amd64+arm64)      │         └──────────────┬───────────────┘
 └─────────────────────────┘                        │ pull
@@ -85,14 +85,14 @@ What it does:
 3. builds `linux/amd64,linux/arm64` and pushes:
 
 ```
-ghcr.io/yourname/garmin-dash:latest
+ghcr.io/markmooij/garmin-dash:latest
 ```
 
 Version tags are optional but recommended for rollbacks:
 
 ```bash
 TAG=v0.1.0 ./build-push.sh
-# → pushes both ghcr.io/yourname/garmin-dash:latest and :v0.1.0
+# → pushes both ghcr.io/markmooij/garmin-dash:latest and :v0.1.0
 ```
 
 First build takes a while (pip installs for both architectures). Later
@@ -129,7 +129,7 @@ nano .env
 | Setting | Value / note |
 |---------|--------------|
 | `GARMINDASH_PORT` | host port for the dashboard (default `8000`) |
-| `GARMINDASH_IMAGE` | optional — pin a version tag, e.g. `ghcr.io/yourname/garmin-dash:v0.1.0` (defaults to `:latest`) |
+| `GARMINDASH_IMAGE` | optional — pin a version tag, e.g. `ghcr.io/markmooij/garmin-dash:v0.1.0` (defaults to `:latest`) |
 | `PUID` / `PGID` | your Pi user's ids (`id -u` / `id -g`, usually 1000/1000) — the containers run as this user; the entrypoint chowns `./data` + `./logs` to it at every boot, so fresh installs work even if Docker created those dirs as root |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | optional (only for re-auth) |
 | `GARMINTOKENS` | keep `data/garmin/tokens` (container-relative; maps to the mounted volume) |
@@ -211,7 +211,7 @@ Rollback (when you used version tags):
 
 ```bash
 # Pi: pin the previous tag via .env, then restart
-echo "GARMINDASH_IMAGE=ghcr.io/yourname/garmin-dash:v0.1.0" >> .env
+echo "GARMINDASH_IMAGE=ghcr.io/markmooij/garmin-dash:v0.1.0" >> .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -238,7 +238,7 @@ is a good idea.)
 | `sqlalchemy.exc.OperationalError: table ... already exists` at boot (one container) | Migration race: app and scheduler both run `alembic upgrade head` on a fresh DB. The image now serializes migrations with a shared-volume flock (`gdash-migrate`) — pull the latest image. If the DB is left mid-migration, the next boot fixes it; to force a clean slate: `docker compose down && sudo rm -f data/garmin_dash.db*` (only when there is nothing to keep) |
 | `chown: changing ownership of ... Operation not permitted` at boot (restart loop) | Your compose still has `user: "${PUID:-1000}:${PGID:-1000}"` — the entrypoint needs root to fix ownership. **Remove the `user:` line** (the image drops privileges itself). If you keep `user:` anyway, the entrypoint skips its fix and you must pre-create the dirs: `sudo chown -R 1000:1000 data logs` (match your `PUID`/`PGID`), then `docker compose up -d` |
 | `sqlite3.OperationalError: unable to open database file` at boot (both containers) | The `data/` dir on the Pi is not writable by the container uid (classic: Docker auto-created `./data` as root before you ever wrote into it). The image now auto-fixes this: the entrypoint chowns `./data` + `./logs` to `PUID:PGID` at every start. For an **already-running** broken stack: `sudo chown -R 1000:1000 data logs` (match your `PUID`/`PGID`), then `docker compose up -d` again — and make sure you pulled the latest image |
-| `docker pull` on Pi fails auth | Registry access changed / not yet granted on this host — confirm with your registry admin, or set `REGISTRY_USER`/`REGISTRY_TOKEN` env vars and `docker login ghcr.io/yourname` manually |
+| `docker pull` on Pi fails auth | Registry access changed / not yet granted on this host — confirm with your registry admin, or set `REGISTRY_USER`/`REGISTRY_TOKEN` env vars and `docker login ghcr.io/markmooij` manually |
 | Build fails on arm64 | binfmt emulation not installed (step 1); run the binfmt container again after a reboot of the dev machine |
 | `data/... permission denied` | `PUID`/`PGID` don't match your Pi user; check `id -u` and fix `.env`, then `docker compose up -d` again |
 | Dashboard 500s on first load | schema not applied — check `docker compose logs app`; normally `alembic upgrade head` at boot does this automatically |

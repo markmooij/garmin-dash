@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Insights page sorting + cap**: sort by date / effect / alphabet with
   asc/desc toggle, and a server-side cap of `INSIGHTS_MAX_DISPLAY` (8) cards.
 
+### Changed
+- **Morning briefing uses yesterday's strain**: in the morning today's strain
+  is 0 (nothing trained yet), so the Signal morning report and the coach
+  advice now substitute the previous day's strain (labelled "Strain
+  (gisteren)") while keeping recovery, sleep, TSB and CTL/ATL current.
+
 ## [0.1.0] — 2026-08-20
 
 ### Added

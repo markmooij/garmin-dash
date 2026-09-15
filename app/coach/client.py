@@ -115,23 +115,35 @@ def _grounded_reply(client, context_text: str, prompt: str) -> tuple[str | None,
     return reply, None
 
 
-def morning_commentary(session: Session, day: date | None = None) -> str | None:
+def morning_commentary(
+    session: Session, day: date | None = None, *, prev_strain: bool = False
+) -> str | None:
     """One short grounded line to append to the Signal morning briefing.
 
-    None when the coach is disabled, the endpoint fails, or the reply
-    doesn't pass the groundedness check — callers must treat None as
-    "say nothing", never fall back to an ungrounded reply.
+    `prev_strain`: in the morning today's strain is 0 (nothing trained yet),
+    so the context substitutes the previous day's strain and the prompt asks
+    for advice on that load instead. None when the coach is disabled, the
+    endpoint fails, or the reply doesn't pass the groundedness check — callers
+    must treat None as "say nothing", never fall back to an ungrounded reply.
     """
     client = get_client()
     if client is None:
         return None
-    context = build_context(session, day)
+    context = build_context(session, day, prev_strain=prev_strain)
     context_text = context.to_prompt_text()
-    prompt = (
-        f"{context_text}\n\n"
-        "Geef een korte coach-opmerking (1-2 zinnen) bij het herstel/strain van vandaag, "
-        "puttend uit bovenstaande cijfers."
-    )
+    if prev_strain:
+        prompt = (
+            f"{context_text}\n\n"
+            "Geef een korte coach-opmerking (1-2 zinnen) bij het herstel van vandaag en de "
+            "trainingsbelasting van gisteren (de 'strain' voor vandaag is de belasting van "
+            "gisteren, omdat vandaag nog niets getraind is), puttend uit bovenstaande cijfers."
+        )
+    else:
+        prompt = (
+            f"{context_text}\n\n"
+            "Geef een korte coach-opmerking (1-2 zinnen) bij het herstel/strain van vandaag, "
+            "puttend uit bovenstaande cijfers."
+        )
     reply, _failure = _grounded_reply(client, context_text, prompt)
     return reply
 

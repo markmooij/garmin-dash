@@ -104,7 +104,12 @@ def run_morning_report() -> str:
         if status == "pending":
             logger.info("Morning report: sleep still pending for %s, deferring", day)
             return "pending"
-        text, commentary = build_morning_report(session, day, sleep_status=status)
+        # In the morning today's strain is 0 (nothing trained yet); the
+        # meaningful "current" load is the previous day's, so the report uses
+        # yesterday's strain while keeping recovery/sleep/etc. current.
+        text, commentary = build_morning_report(
+            session, day, sleep_status=status, prev_strain=True
+        )
         _persist_morning_report(session, text, commentary, sent_at=None)
     try:
         messenger.send_message(recipient, text)

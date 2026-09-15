@@ -72,6 +72,27 @@ def test_build_context_empty_days_are_none(seeded: Session):
     assert ctx.days[0]["recovery_score"] is None
 
 
+def test_build_context_prev_strain_uses_yesterday(seeded: Session):
+    """Morning context substitutes yesterday's strain for today (today is 0)."""
+    from app.db.models import ComputedScore
+
+    seeded.add(ComputedScore(
+        user_id=1, score_date=date(2026, 8, 8),
+        recovery_score=60.0, recovery_band="yellow",
+        strain=9.0, raw_load_trimp=1000.0, raw_load_edwards=50.0,
+        atl=4.0, ctl=2.0, tsb=-2.0, payload={},
+    ))
+    seeded.commit()
+
+    ctx = build_context(seeded, DAY, window_days=1, prev_strain=True)
+    assert ctx.days[-1]["strain"] == 9.0
+
+
+def test_build_context_default_uses_today_strain(seeded: Session):
+    ctx = build_context(seeded, DAY, window_days=1)
+    assert ctx.days[-1]["strain"] == 15.25
+
+
 def test_build_context_includes_journal_today(seeded: Session):
     upsert_response(seeded, DAY, "alcohol", 2.0)
     ctx = build_context(seeded, DAY, window_days=1)

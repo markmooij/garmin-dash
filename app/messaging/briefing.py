@@ -8,7 +8,7 @@ and the scheduler calls `loop.run_morning_report()` / `loop.poll_commands()`.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -46,6 +46,7 @@ def build_briefing(
     *,
     with_commentary: bool = False,
     sleep_status: str | None = None,
+    prev_strain: bool = False,
 ) -> str:
     """Full /summary briefing for `day` (default: today, local time).
 
@@ -60,6 +61,10 @@ def build_briefing(
     recovery is computed without a sleep component; "pending" (Garmin still
     syncing) says the data hasn't arrived yet. None keeps the historical
     "geen registratie" wording for the /summary command.
+
+    `prev_strain`: in the morning today's strain is 0 (nothing trained yet),
+    so the report substitutes the previous day's strain and labels it
+    "(gisteren)". Other metrics (recovery, sleep, TSB, CTL/ATL) stay current.
     """
     if day is None:
         day = datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
@@ -92,7 +97,15 @@ def build_briefing(
         lines.append("⚪ Herstel: geen data")
 
     # strain + load balance
-    lines.append(f"🏋️  Strain {_fmt(data['strain'])}/21  ·  TSB {_fmt(data['tsb'], 1)}")
+    # In the morning today's strain is 0 (nothing trained yet); the meaningful
+    # "current" load is the previous day's, so the morning report substitutes it.
+    strain_value = data["strain"]
+    strain_suffix = ""
+    if prev_strain:
+        prev = summary_for(session, day - timedelta(days=1))
+        strain_value = prev["strain"]
+        strain_suffix = " (gisteren)"
+    lines.append(f"🏋️  Strain{strain_suffix} {_fmt(strain_value)}/21  ·  TSB {_fmt(data['tsb'], 1)}")
     if data["ctl"] is not None or data["atl"] is not None:
         lines.append(f"   CTL {_fmt(data['ctl'], 1)} · ATL {_fmt(data['atl'], 1)}")
 
@@ -138,7 +151,7 @@ def build_briefing(
         if settings.LLM_ENABLED and settings.LLM_MORNING_COMMENTARY:
             from ..coach.client import morning_commentary
 
-            commentary = morning_commentary(session, day)
+            commentary = morning_commentary(session, day, prev_strain=prev_strain)
             if commentary:
                 lines.append("─" * 22)
                 lines.append(f"🤖 {commentary}")
@@ -147,7 +160,11 @@ def build_briefing(
 
 
 def build_morning_report(
-    session: Session, day: date | None = None, *, sleep_status: str | None = None
+    session: Session,
+    day: date | None = None,
+    *,
+    sleep_status: str | None = None,
+    prev_strain: bool = False,
 ) -> tuple[str, str | None]:
     """Build the morning briefing and extract the coach advice line.
 
@@ -157,8 +174,13 @@ def build_morning_report(
 
     `sleep_status` is forwarded to build_briefing so the sleep line reflects
     whether the data is synced, absent, or still pending.
+
+    `prev_strain` is forwarded to build_briefing so the morning report uses
+    yesterday's strain (today is 0) while keeping other metrics current.
     """
-    text = build_briefing(session, day, with_commentary=True, sleep_status=sleep_status)
+    text = build_briefing(
+        session, day, with_commentary=True, sleep_status=sleep_status, prev_strain=prev_strain
+    )
     commentary: str | None = None
     for line in reversed(text.splitlines()):
         if line.startswith("🤖"):

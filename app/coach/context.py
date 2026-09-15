@@ -149,6 +149,7 @@ def build_context(
     day: date | None = None,
     window_days: int | None = None,
     user_id: int = USER_ID,
+    prev_strain: bool = False,
 ) -> CoachContext:
     """Assemble the trailing window + today's journal + gated insights.
 
@@ -166,13 +167,19 @@ def build_context(
         d = day - timedelta(days=i)
         data = summary_for(session, d)
         total_s = data["sleep"].get("total_s")
+        # In the morning today's strain is 0 (nothing trained yet); the
+        # meaningful "current" load is the previous day's, so the morning
+        # coach context substitutes it for today's row.
+        strain = data["strain"]
+        if prev_strain and i == 0:
+            strain = summary_for(session, d - timedelta(days=1))["strain"]
         days.append(
             {
                 "date": d.isoformat(),
                 "label": _day_label(d, day),
                 "recovery_score": data["recovery"]["score"],
                 "recovery_band": data["recovery"]["band"],
-                "strain": data["strain"],
+                "strain": strain,
                 "tsb": data["tsb"],
                 "atl": data["atl"],
                 "ctl": data["ctl"],

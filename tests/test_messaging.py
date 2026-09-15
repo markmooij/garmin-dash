@@ -95,6 +95,38 @@ def test_briefing_missing_day(seeded: Session):
     assert "geen data" in text
 
 
+def test_briefing_prev_strain_uses_yesterday(seeded: Session):
+    """Morning report substitutes yesterday's strain (today is 0)."""
+    from app.db.models import ComputedScore
+
+    seeded.add(ComputedScore(
+        user_id=1, score_date=date(2026, 8, 8),
+        recovery_score=60.0, recovery_band="yellow",
+        strain=9.0, raw_load_trimp=1000.0, raw_load_edwards=50.0,
+        atl=4.0, ctl=2.0, tsb=-2.0, payload={},
+    ))
+    seeded.commit()
+
+    text = build_briefing(seeded, DAY, prev_strain=True)
+    assert "Strain (gisteren) 9/21" in text
+    # other metrics stay current
+    assert "Herstel 72/100" in text
+    assert "TSB -2.9" in text
+
+
+def test_briefing_prev_strain_missing_yesterday(seeded: Session):
+    """No previous-day data -> the strain line shows a dash, not 0."""
+    text = build_briefing(seeded, DAY, prev_strain=True)
+    assert "Strain (gisteren) –/21" in text
+
+
+def test_briefing_default_uses_today_strain(seeded: Session):
+    """Without prev_strain (e.g. /summary), today's strain is used."""
+    text = build_briefing(seeded, DAY)
+    assert "Strain 15/21" in text
+    assert "gisteren" not in text
+
+
 # ── command routing ────────────────────────────────────────────────────
 
 def test_route_summary(seeded: Session):
@@ -262,7 +294,7 @@ def test_build_briefing_with_commentary_appends_grounded_line(seeded: Session, m
         LLM_MORNING_COMMENTARY = True
 
     monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
-    monkeypatch.setattr("app.coach.client.morning_commentary", lambda session, day: "Mooi herstel!")  # noqa: ARG005
+    monkeypatch.setattr("app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Mooi herstel!")  # noqa: ARG005
     text = build_briefing(seeded, DAY, with_commentary=True)
     assert "🤖 Mooi herstel!" in text
 
@@ -376,7 +408,7 @@ def test_build_morning_report_extracts_commentary(seeded: Session, monkeypatch):
 
     monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
     monkeypatch.setattr(
-        "app.coach.client.morning_commentary", lambda session, day: "Mooi herstel!"  # noqa: ARG005
+        "app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Mooi herstel!"  # noqa: ARG005
     )
     text, commentary = build_morning_report(seeded, DAY)
     assert "🤖 Mooi herstel!" in text  # full message still carries the line
@@ -417,7 +449,7 @@ def test_run_morning_report_persists_briefing_and_commentary(
     monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
     monkeypatch.setattr("app.settings.get_settings", lambda: _Settings())
     monkeypatch.setattr(
-        "app.coach.client.morning_commentary", lambda session, day: "Rustig aan vandaag."  # noqa: ARG005
+        "app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Rustig aan vandaag."  # noqa: ARG005
     )
     run_morning_report()
 
@@ -449,7 +481,7 @@ def test_run_morning_report_persist_is_idempotent_per_day(
     monkeypatch.setattr("app.settings.get_settings", lambda: _Settings())
 
     monkeypatch.setattr(
-        "app.coach.client.morning_commentary", lambda session, day: "Eerste advies."  # noqa: ARG005
+        "app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Eerste advies."  # noqa: ARG005
     )
     run_morning_report()
     # Clear the delivery marker so the second call rebuilds rather than no-ops
@@ -457,7 +489,7 @@ def test_run_morning_report_persist_is_idempotent_per_day(
     seeded.query(MorningReport).one().sent_at = None
     seeded.commit()
     monkeypatch.setattr(
-        "app.coach.client.morning_commentary", lambda session, day: "Tweede advies."  # noqa: ARG005
+        "app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Tweede advies."  # noqa: ARG005
     )
     run_morning_report()
 
@@ -488,7 +520,7 @@ def test_run_morning_report_persists_even_when_send_fails(
     monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _Settings())
     monkeypatch.setattr("app.settings.get_settings", lambda: _Settings())
     monkeypatch.setattr(
-        "app.coach.client.morning_commentary", lambda session, day: "Toch bewaard."  # noqa: ARG005
+        "app.coach.client.morning_commentary", lambda session, day, prev_strain=False: "Toch bewaard."  # noqa: ARG005
     )
     run_morning_report()  # must not raise
 

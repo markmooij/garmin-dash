@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from app.coach.client import ask_coach, morning_commentary
+from app.coach.client import ask_coach, evening_reflection, morning_commentary
 from app.coach.context import build_context
 from app.coach.grounding import find_ungrounded, is_grounded
 from app.journal.entries import upsert_response
@@ -277,6 +277,51 @@ def test_morning_commentary_ungrounded_returns_none(seeded: Session, monkeypatch
     client = FakeClient(lambda kwargs: "HRV was 999ms, uitstekend!")  # noqa: ARG005
     monkeypatch.setattr("app.coach.client.get_client", lambda: client)
     assert morning_commentary(seeded, DAY) is None
+
+
+# ── evening reflection ────────────────────────────────────────
+
+def test_evening_reflection_none_when_disabled(seeded: Session, monkeypatch):
+    monkeypatch.setattr("app.coach.client.get_client", lambda: None)
+    assert evening_reflection(seeded, DAY) is None
+
+
+def test_evening_reflection_grounded(seeded: Session, monkeypatch):
+    client = FakeClient(
+        lambda kwargs: (  # noqa: ARG005
+            "Je trainde 60 min kracht en kwam op strain 15.2; met herstel 72 "
+            "ging dat prima. Morgen rustig aan."
+        )
+    )
+    monkeypatch.setattr("app.coach.client.get_client", lambda: client)
+    text = evening_reflection(seeded, DAY)
+    assert text is not None
+    assert "15.2" in text
+
+
+def test_evening_reflection_ungrounded_returns_none(seeded: Session, monkeypatch):
+    """Invented numbers are dropped, same contract as the morning line."""
+    client = FakeClient(lambda kwargs: "Je VO2max steeg naar 77, top dag!")  # noqa: ARG005
+    monkeypatch.setattr("app.coach.client.get_client", lambda: client)
+    assert evening_reflection(seeded, DAY) is None
+
+
+def test_evening_reflection_prompt_asks_about_today_and_insights(
+    seeded: Session, monkeypatch
+):
+    """The prompt must look back at today and offer (not force) the insights."""
+    captured = {}
+
+    def _capture(kwargs):
+        captured["prompt"] = kwargs["messages"][-1]["content"]
+        return "Prima dag."
+
+    monkeypatch.setattr("app.coach.client.get_client", lambda: FakeClient(_capture))
+    evening_reflection(seeded, DAY)
+    prompt = captured["prompt"]
+    assert "terugblik" in prompt
+    assert "inzichten" in prompt  # insights referenced when relevant
+    assert "morgen" in prompt  # closes with a suggestion
 
 
 def test_get_client_disabled_returns_none():

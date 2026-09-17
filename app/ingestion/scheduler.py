@@ -204,7 +204,7 @@ def schedule() -> None:
         )
         logger.info(
             "Signal jobs scheduled: report %02d:%02d, command poll every %d min, "
-            "journal reminder %02d:%02d, weekly digest %s %02d:%02d",
+            "evening wrap-up %02d:%02d, weekly digest %s %02d:%02d",
             hour,
             minute,
             poll_min,

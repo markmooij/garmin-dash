@@ -12,8 +12,8 @@ from ..db import session_scope
 from ..db.models import MorningReport
 from ..settings import get_settings
 from ..web.query import sleep_status
-from .briefing import build_morning_report, route_command
-from .journal_commands import build_reminder_text, build_weekly_digest
+from .briefing import build_evening_wrapup, build_morning_report, route_command
+from .journal_commands import build_weekly_digest
 
 
 logger = logging.getLogger("garmin_dash.messaging.loop")
@@ -169,23 +169,33 @@ def _mark_sent(session, day: date) -> None:
 
 
 def run_journal_reminder() -> None:
-    """Send the evening journal prompt (scheduler job at SIGNAL_JOURNAL_TIME)."""
+    """Send the evening wrap-up (scheduler job at SIGNAL_JOURNAL_TIME).
+
+    Day overview + LLM reflection on the day + the journal prompt, in one
+    message. The overview and reflection are individually gated
+    (SIGNAL_EVENING_SUMMARY / LLM_EVENING_REFLECTION) and degrade to the
+    plain journal prompt when off or unavailable.
+    """
     settings = get_settings()
     messenger = get_messenger()
     if messenger is None:
-        logger.info("Journal reminder skipped (Signal disabled)")
+        logger.info("Evening wrap-up skipped (Signal disabled)")
         return
     recipient = settings.SIGNAL_RECIPIENT
     if not recipient:
-        logger.warning("SIGNAL_RECIPIENT unset — journal reminder skipped")
+        logger.warning("SIGNAL_RECIPIENT unset — evening wrap-up skipped")
         return
     with session_scope() as session:
-        text = build_reminder_text(session)
+        text, reflection = build_evening_wrapup(session)
     try:
         messenger.send_message(recipient, text)
-        logger.info("Journal reminder sent to %s", recipient)
+        logger.info(
+            "Evening wrap-up sent to %s (reflection: %s)",
+            recipient,
+            "yes" if reflection else "no",
+        )
     except Exception:  # noqa: BLE001
-        logger.exception("Journal reminder send failed")
+        logger.exception("Evening wrap-up send failed")
 
 
 def run_weekly_digest() -> None:

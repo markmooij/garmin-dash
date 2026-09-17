@@ -229,8 +229,8 @@ entry storage (`entries.py`, per-day upsert/merge, one row per day), gated corre
 after the logged day; both groups need ≥ `JOURNAL_INSIGHT_MIN_SAMPLES` (5) days in the
 `JOURNAL_INSIGHT_WINDOW_DAYS` (90) window; output = direction + mean difference + Cohen's d +
 window, labeled *insight*; never p-values, never under-powered claims). Signal commands `/log`,
-`/journal`, `/insights` routed in `route_command`; scheduler jobs: evening reminder
-(`SIGNAL_JOURNAL_TIME`, default 20:30) + weekly digest (`SIGNAL_DIGEST_TIME`/`SIGNAL_DIGEST_DAY`,
+`/journal`, `/insights` routed in `route_command`; scheduler jobs: evening wrap-up
+(`SIGNAL_JOURNAL_TIME`, default 23:00) + weekly digest (`SIGNAL_DIGEST_TIME`/`SIGNAL_DIGEST_DAY`,
 silent until the sample gate clears); web: `/journal` (form + 30-day history) and `/insights`
 pages + `/api/journal` + `/api/insights`; CLI: `gdash journal today|log|insights`.
 105 app + 14 lib tests green.

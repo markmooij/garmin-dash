@@ -10,7 +10,13 @@ from signal_messenger import Message, Messenger
 
 from app.journal.entries import get_entry, upsert_response
 from app.journal.schema import FACTORS
-from app.messaging.briefing import build_briefing, build_morning_report, route_command
+from app.messaging.briefing import (
+    build_briefing,
+    build_day_overview,
+    build_evening_wrapup,
+    build_morning_report,
+    route_command,
+)
 from app.messaging.journal_commands import (
     build_reminder_text,
     build_weekly_digest,
@@ -352,6 +358,107 @@ def test_run_journal_reminder_asks_at_most_three_factors(seeded: Session, monkey
 def test_run_journal_reminder_noop_when_disabled(monkeypatch):
     monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: None)
     run_journal_reminder()  # must not raise
+
+
+# ── evening wrap-up (day overview + reflection + journal prompt) ─────
+
+class _EveningSettings:
+    TIMEZONE = "Europe/Amsterdam"
+    SIGNAL_EVENING_SUMMARY = True
+    LLM_ENABLED = False
+    LLM_EVENING_REFLECTION = False
+    DASHBOARD_URL = None
+    JOURNAL_PROMPT_FACTORS_PER_DAY = 3
+
+
+def test_day_overview_contains_the_days_numbers(seeded: Session, monkeypatch):
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _EveningSettings())
+    text = build_day_overview(seeded, DAY)
+    assert "Dagoverzicht" in text
+    assert "Kracht" in text  # what the day actually contained
+    assert "Strain 15.2/21" in text  # today's strain, not yesterday's
+    assert "Herstel vanochtend 72/100" in text
+    assert "Slaap vannacht 81/100" in text
+    assert "8223 stappen" in text
+    assert "17 intensiteitsmin" in text  # 7 moderate + 10 vigorous
+
+
+def test_day_overview_without_activities_says_so(seeded: Session, monkeypatch):
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _EveningSettings())
+    text = build_day_overview(seeded, date(2026, 1, 1))
+    assert "Geen activiteiten geregistreerd" in text
+
+
+def test_evening_wrapup_combines_overview_and_journal_prompt(
+    seeded: Session, monkeypatch
+):
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _EveningSettings())
+    text, reflection = build_evening_wrapup(seeded, DAY)
+    assert "Dagoverzicht" in text  # overview block
+    assert "Dagboek" in text  # journal prompt still present
+    assert "Antwoord: /log" in text
+    assert reflection is None  # LLM disabled
+
+
+def test_evening_wrapup_appends_llm_reflection(seeded: Session, monkeypatch):
+    class _S(_EveningSettings):
+        LLM_ENABLED = True
+        LLM_EVENING_REFLECTION = True
+
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _S())
+    monkeypatch.setattr(
+        "app.coach.client.evening_reflection", lambda session, day: "Sterke dag."  # noqa: ARG005
+    )
+    text, reflection = build_evening_wrapup(seeded, DAY)
+    assert "🤖 Sterke dag." in text
+    assert reflection == "Sterke dag."
+
+
+def test_evening_wrapup_survives_reflection_failure(seeded: Session, monkeypatch):
+    """A broken coach must not cost the user the journal prompt."""
+
+    class _S(_EveningSettings):
+        LLM_ENABLED = True
+        LLM_EVENING_REFLECTION = True
+
+    def _boom(session, day):  # noqa: ARG001
+        raise RuntimeError("endpoint down")
+
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _S())
+    monkeypatch.setattr("app.coach.client.evening_reflection", _boom)
+    text, reflection = build_evening_wrapup(seeded, DAY)
+    assert reflection is None
+    assert "Antwoord: /log" in text  # prompt survived
+    assert "Dagoverzicht" in text
+
+
+def test_evening_wrapup_overview_can_be_disabled(seeded: Session, monkeypatch):
+    class _S(_EveningSettings):
+        SIGNAL_EVENING_SUMMARY = False
+
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _S())
+    text, _ = build_evening_wrapup(seeded, DAY)
+    assert "Dagoverzicht" not in text
+    assert "Antwoord: /log" in text  # degrades to the plain reminder
+
+
+def test_run_journal_reminder_sends_the_wrapup(seeded: Session, monkeypatch):
+    """The scheduler job sends overview + prompt in one message."""
+
+    class _Settings:
+        SIGNAL_RECIPIENT = "+31600000000"
+
+    m = FakeMessenger()
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: _EveningSettings())
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 0, tzinfo=ZoneInfo("Europe/Amsterdam")))
+    run_journal_reminder()
+    assert len(m.sent) == 1  # one message, not two
+    _recipient, text = m.sent[0]
+    assert "Dagoverzicht" in text
+    assert "Antwoord: /log" in text
 
 
 def test_run_weekly_digest_skips_when_ungated(seeded: Session, monkeypatch):

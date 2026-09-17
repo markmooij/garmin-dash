@@ -20,7 +20,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Insights page sorting + cap**: sort by date / effect / alphabet with
   asc/desc toggle, and a server-side cap of `INSIGHTS_MAX_DISPLAY` (8) cards.
 
+### Added
+- **Evening wrap-up**: the nightly Signal message now opens with a numeric day
+  overview (activities, strain, TSB/CTL/ATL, the morning's recovery, last
+  night's sleep, steps, intensity minutes, stress, Body Battery) and an LLM
+  reflection that interprets the day and references a gated journal insight
+  when it is actually relevant — then the journal prompt as before. Gated by
+  `SIGNAL_EVENING_SUMMARY` and `LLM_EVENING_REFLECTION` (both default on); a
+  disabled or failing coach degrades to the plain journal prompt.
+
 ### Changed
+- **Evening message moved to 23:00** (`SIGNAL_JOURNAL_TIME`, was 20:30) so the
+  day is essentially complete before it is summarised.
 - **Morning briefing uses yesterday's strain**: in the morning today's strain
   is 0 (nothing trained yet), so the Signal morning report and the coach
   advice now substitute the previous day's strain (labelled "Strain

@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     LLM_CONTEXT_WINDOW_DAYS: int = 7
     # Append a short LLM commentary line to the Signal morning briefing
     LLM_MORNING_COMMENTARY: bool = True
+    # Short LLM reflection on the day just finished, appended to the evening
+    # wrap-up. Interprets the day's numbers and references gated journal
+    # insights when they are relevant. Requires LLM_ENABLED.
+    LLM_EVENING_REFLECTION: bool = True
 
     # Signal Messenger (libs/signal_messenger)
     SIGNAL_CLI_API_URL: str = "http://localhost:8080"
@@ -75,7 +79,13 @@ class Settings(BaseSettings):
     # How often the morning-report job re-checks while sleep is pending.
     SIGNAL_REPORT_RETRY_MINUTES: int = 15
     SIGNAL_COMMAND_POLL_MINUTES: int = 5
-    SIGNAL_JOURNAL_TIME: str = "20:30"  # evening journal reminder
+    # Evening wrap-up: day overview + LLM reflection + journal prompt. Late
+    # enough that the day is essentially complete (training, steps and stress
+    # are all in) but before midnight so it still logs against today.
+    SIGNAL_JOURNAL_TIME: str = "23:00"  # evening wrap-up (overview + reminder)
+    # Prepend a numeric day overview (recovery/strain/sleep/watch/activities)
+    # to the evening message. Off = journal prompt only (pre-0.2 behaviour).
+    SIGNAL_EVENING_SUMMARY: bool = True
     SIGNAL_DIGEST_TIME: str = "20:00"  # weekly insights digest
     SIGNAL_DIGEST_DAY: str = "sun"  # APScheduler CronTrigger day_of_week (mon..sun)
 

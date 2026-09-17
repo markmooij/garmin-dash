@@ -148,6 +148,39 @@ def morning_commentary(
     return reply
 
 
+def evening_reflection(session: Session, day: date | None = None) -> str | None:
+    """Short grounded reflection on the day that just finished.
+
+    Appended to the evening wrap-up. Unlike the morning commentary (which
+    looks forward from recovery + yesterday's load), this looks *back* at
+    the day's own numbers — what was trained, how the body responded, how it
+    compares to the week — and may reference the gated journal insights
+    already present in the context when they actually bear on today.
+
+    Insights are only *offered*: the prompt says "when relevant", because a
+    forced correlation reference every evening would be noise. None when the
+    coach is disabled, the endpoint fails, or the reply isn't grounded —
+    callers must treat None as "say nothing".
+    """
+    client = get_client()
+    if client is None:
+        return None
+    context = build_context(session, day)
+    context_text = context.to_prompt_text()
+    prompt = (
+        f"{context_text}\n\n"
+        "Schrijf een korte terugblik (2-4 zinnen) op de dag van vandaag, gericht aan de "
+        "sporter zelf ('je'). Interpreteer de cijfers van vandaag — wat er getraind is, "
+        "de strain, het herstel, de slaap van vannacht — en zet ze in verhouding tot het "
+        "weekoverzicht. Als een van de gevalideerde inzichten hierboven echt relevant is "
+        "voor deze dag, verwijs er dan kort naar; zo niet, laat ze dan weg. "
+        "Sluit af met één concrete suggestie voor morgen. Geen kopjes of opsomming, "
+        "gewoon lopende tekst."
+    )
+    reply, _failure = _grounded_reply(client, context_text, prompt)
+    return reply
+
+
 def ask_coach(session: Session, question: str, day: date | None = None) -> str:
     """Answer a free-form question (Signal /ask or web) grounded in the context.
 

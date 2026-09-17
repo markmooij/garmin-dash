@@ -8,18 +8,21 @@ and the scheduler calls `loop.run_morning_report()` / `loop.poll_commands()`.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ..settings import get_settings
 from ..web.query import summary_for
-from .journal_commands import route_insights, route_journal, route_log
+from .journal_commands import build_reminder_text, route_insights, route_journal, route_log
 
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+
+logger = logging.getLogger(__name__)
 
 _DUTCH_DAYS = [
     "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag",
@@ -187,6 +190,106 @@ def build_morning_report(
             commentary = line[1:].strip()
             break
     return text, commentary
+
+
+def build_day_overview(session: Session, day: date | None = None) -> str:
+    """Numeric recap of the day that just finished (evening wrap-up).
+
+    Deliberately different from the morning briefing: the morning looks
+    forward (readiness), this looks back at what the day actually contained
+    — training done, strain reached, movement, stress — plus the recovery
+    the day started from. Last night's sleep is included because it is the
+    input to today's recovery, which is what the reflection reasons about.
+
+    Built from `summary_for`, so the numbers match the dashboard exactly.
+    """
+    if day is None:
+        day = datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
+    data = summary_for(session, day)
+    rec = data["recovery"]
+    w = data["wellness"]
+    sleep = data["sleep"]
+
+    lines: list[str] = [f"🌙 Dagoverzicht — {_dutch_date(day)}", "─" * 22]
+
+    # what the day contained: activities + the strain they produced
+    acts = data.get("activities") or []
+    if acts:
+        for a in acts[:3]:
+            name = a.get("name") or a.get("type") or "activiteit"
+            dur = a.get("duration_s")
+            dur_txt = f" · {dur // 60:.0f}min" if dur else ""
+            lines.append(f"💪 {name}{dur_txt}")
+        if len(acts) > 3:
+            lines.append(f"   +{len(acts) - 3} meer")
+    else:
+        lines.append("💤 Geen activiteiten geregistreerd")
+
+    lines.append(f"🏋️  Strain {_fmt(data['strain'], 1)}/21  ·  TSB {_fmt(data['tsb'], 1)}")
+    if data["ctl"] is not None or data["atl"] is not None:
+        lines.append(f"   CTL {_fmt(data['ctl'], 1)} · ATL {_fmt(data['atl'], 1)}")
+
+    # how the body handled it
+    if rec["score"] is not None:
+        band = _BANDS.get(rec.get("band") or "", "⚪")
+        band_label = _BAND_LABELS.get(rec.get("band") or "", "?")
+        lines.append(f"{band} Herstel vanochtend {rec['score']:.0f}/100 ({band_label})")
+
+    if sleep["score"] is not None:
+        total = ((sleep["total_s"] or 0) / 3600) if sleep["total_s"] else 0
+        lines.append(f"😴 Slaap vannacht {sleep['score']:.0f}/100 ({total:.1f}u)")
+
+    # movement + load on the body across the whole day
+    bits = []
+    if w["steps"] is not None:
+        bits.append(f"{w['steps']:.0f} stappen")
+    intensity = (w["moderate_min"] or 0) + (w["vigorous_min"] or 0)
+    if intensity:
+        bits.append(f"{intensity:.0f} intensiteitsmin")
+    if w["avg_stress"] is not None:
+        bits.append(f"stress gem {w['avg_stress']:.0f}")
+    if w["bb_most_recent"] is not None:
+        bits.append(f"BB nu {w['bb_most_recent']:.0f}")
+    if bits:
+        lines.append("📱 " + " · ".join(bits))
+
+    return "\n".join(lines)
+
+
+def build_evening_wrapup(
+    session: Session, day: date | None = None
+) -> tuple[str, str | None]:
+    """The full evening message: day overview + LLM reflection + journal prompt.
+
+    Returns (text, reflection) so callers can persist the reflection
+    separately, mirroring `build_morning_report`.
+
+    Each block is independently gated so a disabled LLM or a failed call
+    degrades to the plain journal reminder rather than failing the message
+    — the prompt to log is the contract, the rest is enrichment.
+    """
+    if day is None:
+        day = datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
+    settings = get_settings()
+    blocks: list[str] = []
+
+    if settings.SIGNAL_EVENING_SUMMARY:
+        blocks.append(build_day_overview(session, day))
+
+    reflection: str | None = None
+    if settings.LLM_ENABLED and settings.LLM_EVENING_REFLECTION:
+        from ..coach.client import evening_reflection
+
+        try:
+            reflection = evening_reflection(session, day)
+        except Exception:  # noqa: BLE001 - coach must never break the reminder
+            logger.exception("Evening reflection failed — sending wrap-up without it")
+            reflection = None
+        if reflection:
+            blocks.append(f"🤖 {reflection}")
+
+    blocks.append(build_reminder_text(session, day))
+    return "\n\n".join(blocks), reflection
 
 
 # ── command routing ────────────────────────────────────────────────────

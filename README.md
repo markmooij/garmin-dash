@@ -19,7 +19,7 @@ A self-hosted, open-source health & athletic-performance dashboard that turns ra
 - 📊 **Recovery Score**: 0–100 composite score based on HRV, RHR, sleep efficiency
 - 🏃 **Strain (0–21)**: Cardio + strength load with personal calibration
 - 📈 **Training Load**: ATL/CTL/TSB (Acute/Chronic Training Load)
-- 📱 **Signal Integration**: Morning readiness reports, command responses
+- 📱 **Signal Integration**: Morning readiness reports, an evening wrap-up (day overview + LLM reflection + journal prompt), command responses
 - 🧠 **LLM Coach**: Context-aware, private endpoint, grounded in real data
 - 📚 **Behavioral Journal**: Correlate habits with recovery/strain
 - 🖥️ **Local Dashboard**: Whoop-style UI, extensible via Jinja2

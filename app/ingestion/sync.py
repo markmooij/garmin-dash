@@ -17,7 +17,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..db import get_session
@@ -31,6 +31,7 @@ from ..db.models import (
     SleepSession,
     SyncState,
 )
+from ..settings import get_settings
 from .adapter import GarminAdapterError, GarminClientAdapter
 
 
@@ -59,9 +60,21 @@ def _date_str(d: date) -> str:
 
 
 def _save_raw(session: Session, endpoint: str, key: str, payload: Any) -> None:
-    session.add(
-        RawPayload(endpoint=endpoint, key=key, payload=_jsonable(payload))
+    """Upsert one (endpoint, key) snapshot — never append.
+
+    A no-op when RAW_PAYLOADS_ENABLED is false (nothing reads this table in
+    normal operation; it exists purely for debugging/re-derivation).
+    """
+    if not get_settings().RAW_PAYLOADS_ENABLED:
+        return
+    stmt = sqlite_insert(RawPayload).values(
+        endpoint=endpoint, key=key, payload=_jsonable(payload), fetched_at=datetime.now(UTC)
     )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["endpoint", "key"],
+        set_={"payload": stmt.excluded.payload, "fetched_at": stmt.excluded.fetched_at},
+    )
+    session.execute(stmt)
 
 
 def _jsonable(payload: Any) -> Any:
@@ -538,6 +551,30 @@ def incremental_sync(days_back: int = 3) -> None:
     finally:
         session.close()
         adapter.close()
+
+
+def purge_raw_payloads(max_days: int | None = None, session: Session | None = None) -> int:
+    """Delete raw_payloads snapshots not refetched in `max_days` days.
+
+    Snapshots are upserted on every sync (see `_save_raw`), so a row's
+    `fetched_at` only goes stale when the (endpoint, key) genuinely stopped
+    being requested (e.g. it fell out of the SYNC_DAYS_BACK window). Returns
+    the number of rows deleted. `max_days` defaults to RAW_PAYLOADS_MAX_DAYS;
+    0 disables the purge (keep everything).
+    """
+    max_days = get_settings().RAW_PAYLOADS_MAX_DAYS if max_days is None else max_days
+    if not max_days:
+        return 0
+    own = session is None
+    session = session or get_session()
+    try:
+        cutoff = datetime.now(UTC) - timedelta(days=max_days)
+        result = session.execute(delete(RawPayload).where(RawPayload.fetched_at < cutoff))
+        session.commit()
+        return result.rowcount or 0
+    finally:
+        if own:
+            session.close()
 
 
 def backfill(days: int = 90) -> None:

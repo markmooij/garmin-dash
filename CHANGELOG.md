@@ -20,7 +20,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Insights page sorting + cap**: sort by date / effect / alphabet with
   asc/desc toggle, and a server-side cap of `INSIGHTS_MAX_DISPLAY` (8) cards.
 
-### Added
 - **Evening wrap-up**: the nightly Signal message now opens with a numeric day
   overview (activities, strain, TSB/CTL/ATL, the morning's recovery, last
   night's sleep, steps, intensity minutes, stress, Body Battery) and an LLM
@@ -30,12 +29,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disabled or failing coach degrades to the plain journal prompt.
 
 ### Changed
+- **`docker/docker-compose.prod.yml` is now the single compose file for both
+  deployments**, with a new `docker-compose.rootless.yml` overlay for rootless
+  Docker hosts (signal-cli entrypoint override; `PUID=0`/`PGID=0`). Platform,
+  image, Signal API port and `SIGNAL_CLI_BIN` are env-driven
+  (`GARMINDASH_PLATFORM`, `GARMINDASH_IMAGE`, `SIGNAL_API_PORT`,
+  `SIGNAL_CLI_BIN`); defaults keep the documented Pi path. The scheduler also
+  gets a real healthcheck (the image's `/healthz` probe can never pass there).
+- **`SIGNAL_CLI_BIN` default corrected to `/usr/bin/signal-cli`** — the
+  previous `/usr/local/bin/signal-cli` does not exist in
+  `bbernhard/signal-cli-rest-api`, which would have broken Signal on a fresh
+  Pi provisioning.
 - **Evening message moved to 23:00** (`SIGNAL_JOURNAL_TIME`, was 20:30) so the
   day is essentially complete before it is summarised.
 - **Morning briefing uses yesterday's strain**: in the morning today's strain
   is 0 (nothing trained yet), so the Signal morning report and the coach
   advice now substitute the previous day's strain (labelled "Strain
   (gisteren)") while keeping recovery, sleep, TSB and CTL/ATL current.
+
+### Fixed
+- **`raw_payloads` grew without bound** (3.9 GB of a 4.2 GB database, 188k rows
+  for 2.1k distinct payloads — an 88× duplication factor). `_save_raw()` used
+  `session.add()` unconditionally, so every 15-minute sync pass re-inserted
+  each payload in the catch-up window, contradicting the module's own "upserts
+  only" contract. It now upserts on a new `UNIQUE(endpoint, key)` constraint,
+  and a nightly job prunes snapshots not refetched for
+  `RAW_PAYLOADS_MAX_DAYS` (90); `RAW_PAYLOADS_ENABLED=false` stops writes
+  entirely, as nothing reads the table in normal operation. Migration
+  `f6a1b8c3d9e2` dedupes existing rows (keeping the newest per key) before
+  adding the constraint; on the live database this took it from 4.2 GB to
+  61 MB.
 
 ## [0.1.0] — 2026-08-20
 

@@ -230,6 +230,37 @@ docker compose -f docker-compose.prod.yml start
 Restore = stop, replace `data/`, start. (A cron job that tars `data/` nightly
 is a good idea.)
 
+## 10. Running rootless (non-Pi hosts)
+
+`docker-compose.prod.yml` is the single source of truth for both deployments.
+Its defaults (`ghcr.io/markmooij/garmin-dash:latest`, `linux/arm64`,
+`PUID/PGID=1000`) are the Pi's, so a **rootless** Docker host needs two things:
+
+1. **`docker-compose.rootless.yml`** — overrides the signal-cli-rest-api
+   entrypoint. That image drops to uid 1000 via `setpriv`, which under rootless
+   Docker lands in the host's subuid range and can no longer read the Signal
+   data directory.
+2. **`PUID=0` / `PGID=0` in `.env`** — under rootless, container uid 0 *is* the
+   host user, so the `./data` and `./logs` bind mounts stay writable. Any other
+   value maps into the subuid range and makes them unwritable.
+
+Also set `GARMINDASH_IMAGE` (the compose default is the published ghcr image)
+and `GARMINDASH_PLATFORM=linux/amd64` on an x86 host.
+
+Because the compose files live one level up from the deployment dir, point
+compose at them explicitly and keep the project directory on the dir holding
+`.env` + `./data` (that is what `./data` and `env_file: .env` resolve against):
+
+```bash
+cd ~/garmin-dash          # the dir with .env, data/, logs/
+docker compose --project-directory . \
+  -f ../docker-compose.prod.yml -f ../docker-compose.rootless.yml \
+  --profile signal up -d
+```
+
+Rationale and the exact failure modes are in the header comment of
+`docker-compose.rootless.yml`.
+
 ## Troubleshooting
 
 | Symptom | Fix |

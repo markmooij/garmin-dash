@@ -92,6 +92,16 @@ class Settings(BaseSettings):
     # Garmin
     GARMINTOKENS: str | None = None
 
+    # Raw API snapshots (raw_payloads table). Kept for debugging/re-derivation,
+    # but nothing reads them in normal operation, so both the switch and a
+    # retention window are offered. Rows are unique on (endpoint, key), so a
+    # re-sync overwrites instead of appending.
+    RAW_PAYLOADS_ENABLED: bool = True
+    # Drop snapshots not refetched for this many days (0 = keep everything).
+    # Recent days are refreshed by every sync pass, so only genuinely stale
+    # responses age out.
+    RAW_PAYLOADS_MAX_DAYS: int = 90
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

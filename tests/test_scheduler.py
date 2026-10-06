@@ -136,6 +136,7 @@ def test_schedule_registers_journal_and_digest_jobs_when_signal_enabled(monkeypa
     ids = {c["id"] for c in calls}
     assert ids == {
         "garmin-sync",
+        "raw-payloads-purge",
         "signal-morning-report",
         "signal-command-poll",
         "signal-journal-reminder",

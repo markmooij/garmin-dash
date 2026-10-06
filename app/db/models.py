@@ -359,15 +359,24 @@ class DeviceMetrics(Base):
 
 
 class RawPayload(Base):
-    """Snapshot of every raw API response (debuggability, re-derivation)."""
+    """Snapshot of every raw API response (debuggability, re-derivation).
+
+    One row per (endpoint, key) — a re-sync overwrites rather than appends.
+    Without that unique key a 15-minute sync pass over a 3-day catch-up window
+    re-inserted every payload it refetched, which grew this write-only table to
+    88x its useful size (3.9 GB for ~64 MB of distinct data).
+    """
 
     __tablename__ = "raw_payloads"
+    __table_args__ = (UniqueConstraint("endpoint", "key", name="uq_raw_endpoint_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     endpoint: Mapped[str] = mapped_column(String(64), index=True)
     key: Mapped[str] = mapped_column(String(64), index=True)  # date or activity id
     payload: Mapped[dict] = mapped_column(JSON)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class SyncState(Base):

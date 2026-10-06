@@ -124,6 +124,23 @@ def run_weekly_digest_job() -> None:
         logger.exception("Weekly digest job failed")
 
 
+def run_raw_payloads_purge_job() -> None:
+    """Drop raw_payloads snapshots older than RAW_PAYLOADS_MAX_DAYS (no-op if 0).
+
+    raw_payloads is write-only debugging data (nothing in the app reads it);
+    without this it grows unbounded since every sync pass re-touches the
+    catch-up window and (pre-fix) used to even re-insert duplicates.
+    """
+    try:
+        from .sync import purge_raw_payloads
+
+        deleted = purge_raw_payloads()
+        if deleted:
+            logger.info("Purged %d stale raw_payloads rows", deleted)
+    except Exception:  # noqa: BLE001
+        logger.exception("raw_payloads purge job failed")
+
+
 def schedule() -> None:
     """Start the blocking scheduler."""
     settings = get_settings()
@@ -152,6 +169,14 @@ def schedule() -> None:
         coalesce=True,
         max_instances=1,
         next_run_time=next_run,
+    )
+    scheduler.add_job(
+        run_raw_payloads_purge_job,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="raw-payloads-purge",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     if settings.SIGNAL_ENABLED:

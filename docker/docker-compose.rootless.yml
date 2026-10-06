@@ -1,0 +1,29 @@
+# Rootless Docker override for Garmin Dash.
+#
+# Rootless Docker maps container uid 0 to the *host user*, and any uid > 0
+# into the host's subuid range. That changes two things versus a rootful host
+# (e.g. the Raspberry Pi in DEPLOY.md), so this file exists next to
+# docker-compose.prod.yml rather than replacing it:
+#
+#   1. signal-cli-rest-api — the upstream image's entrypoint drops to uid 1000
+#      via setpriv. Under rootless that uid lands in the subuid range and can
+#      no longer read the migrated signal data (owned by the host user, which
+#      is container root). Override the entrypoint to stay root.
+#
+#   2. PUID/PGID must be 0 — container uid 0 *is* the host user, so the data
+#      directory stays owned by it and remains writable. Set PUID=0/PGID=0 in
+#      your .env; the entrypoint then skips its chown/setpriv step.
+#
+# Run from the directory holding .env + ./data (the deployment dir):
+#
+#   docker compose --project-directory . \
+#     -f ../docker-compose.prod.yml -f ../docker-compose.rootless.yml \
+#     --profile signal up -d
+#
+services:
+  signal-api:
+    entrypoint:
+      [
+        "/usr/bin/signal-cli-rest-api",
+        "-signal-cli-config=/home/.local/share/signal-cli",
+      ]

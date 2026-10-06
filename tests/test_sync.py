@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -90,8 +90,11 @@ def test_wellness_upsert_is_idempotent(session, adapter):
     assert w.resting_heart_rate == 45
     assert w.calendar_date == day
     assert w.steps is not None
-    # raw payload snapshot stored once per fetch (2 fetches → 2 snapshots is fine)
-    assert session.query(RawPayload).count() == 2
+    # Raw payload snapshot is upserted on (endpoint, key): refetching the same
+    # day refreshes the snapshot rather than appending a second copy. This is
+    # what kept raw_payloads from growing ~88x its useful size.
+    assert session.query(RawPayload).count() == 1
+    assert session.query(RawPayload).filter_by(endpoint="user_summary").count() == 1
 
 
 def test_sleep_parses_stages_and_scores(session, adapter):
@@ -211,3 +214,101 @@ def test_intraday_skips_none_body_battery_values(session):
         if s.stream == "intraday_body_battery"
     ]
     assert all(e is None for e in errs)
+
+
+# ---------------------------------------------------------------------------
+# raw_payloads: upsert semantics + retention (no fixtures — these must always
+# run, since they guard the table that once grew to 3.9 GB)
+# ---------------------------------------------------------------------------
+
+
+def test_save_raw_upserts_instead_of_appending(session):
+    """Same (endpoint, key) twice = one row, holding the *latest* payload.
+
+    Regression guard: _save_raw used to session.add() unconditionally, so each
+    15-minute sync pass over the catch-up window re-inserted every payload.
+    """
+    from app.ingestion.sync import _save_raw
+
+    _save_raw(session, "sleep_data", "2026-08-09", {"sleepScore": 70})
+    session.commit()
+    _save_raw(session, "sleep_data", "2026-08-09", {"sleepScore": 85})
+    session.commit()
+
+    rows = session.query(RawPayload).filter_by(endpoint="sleep_data", key="2026-08-09").all()
+    assert len(rows) == 1
+    assert rows[0].payload == {"sleepScore": 85}
+
+
+def test_save_raw_keeps_distinct_keys_apart(session):
+    from app.ingestion.sync import _save_raw
+
+    _save_raw(session, "stress_data", "2026-08-09", {"v": 1})
+    _save_raw(session, "stress_data", "2026-08-10", {"v": 2})
+    _save_raw(session, "heart_rates", "2026-08-09", {"v": 3})
+    session.commit()
+
+    assert session.query(RawPayload).count() == 3
+
+
+def test_save_raw_is_a_noop_when_disabled(session, monkeypatch):
+    """Nothing reads raw_payloads, so the switch must actually suppress writes."""
+    from types import SimpleNamespace
+
+    from app import ingestion
+
+    monkeypatch.setattr(
+        ingestion.sync, "get_settings", lambda: SimpleNamespace(RAW_PAYLOADS_ENABLED=False)
+    )
+    ingestion.sync._save_raw(session, "sleep_data", "2026-08-09", {"sleepScore": 70})
+    session.commit()
+    assert session.query(RawPayload).count() == 0
+
+
+def test_purge_raw_payloads_removes_only_stale_rows(session, monkeypatch):
+    """Retention keys off fetched_at: rows still being refetched survive."""
+    from types import SimpleNamespace
+
+    from app import ingestion
+    from app.ingestion.sync import _save_raw, purge_raw_payloads
+
+    _save_raw(session, "sleep_data", "2026-08-09", {"v": 1})
+    _save_raw(session, "sleep_data", "2026-08-10", {"v": 2})
+    session.commit()
+
+    # Age one row beyond the window by pushing its fetched_at back.
+    old = (
+        session.query(RawPayload)
+        .filter_by(endpoint="sleep_data", key="2026-08-09")
+        .one()
+    )
+    old.fetched_at = datetime.now(UTC) - timedelta(days=200)
+    session.commit()
+
+    monkeypatch.setattr(
+        ingestion.sync, "get_settings", lambda: SimpleNamespace(RAW_PAYLOADS_MAX_DAYS=90)
+    )
+    deleted = purge_raw_payloads(session=session)
+
+    assert deleted == 1
+    remaining = [(r.key, r.payload) for r in session.query(RawPayload).all()]
+    assert remaining == [("2026-08-10", {"v": 2})]
+
+
+def test_purge_raw_payloads_disabled_keeps_everything(session, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import ingestion
+    from app.ingestion.sync import _save_raw, purge_raw_payloads
+
+    _save_raw(session, "sleep_data", "2026-01-01", {"v": 1})
+    session.commit()
+    row = session.query(RawPayload).one()
+    row.fetched_at = datetime.now(UTC) - timedelta(days=999)
+    session.commit()
+
+    monkeypatch.setattr(
+        ingestion.sync, "get_settings", lambda: SimpleNamespace(RAW_PAYLOADS_MAX_DAYS=0)
+    )
+    assert purge_raw_payloads(session=session) == 0
+    assert session.query(RawPayload).count() == 1

@@ -48,6 +48,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (gisteren)") while keeping recovery, sleep, TSB and CTL/ATL current.
 
 ### Fixed
+- **Evening wrap-up is retried until it is delivered.** It used to fire
+  exactly once at `SIGNAL_JOURNAL_TIME`; a failed Signal send was logged and
+  the message was lost — three nights in a row went missing silently while
+  container networking was down. The wrap-up is now persisted to a new
+  `evening_reports` table before the send and retried every
+  `SIGNAL_REPORT_RETRY_MINUTES` until `sent_at` is set or the day ends (later
+  `/log` replies would file under the wrong day). Retries resend the stored
+  text, so the LLM reflection is generated once. A wrap-up that never went out
+  is flagged in the next morning briefing instead of vanishing.
 - **`raw_payloads` grew without bound** (3.9 GB of a 4.2 GB database, 188k rows
   for 2.1k distinct payloads — an 88× duplication factor). `_save_raw()` used
   `session.add()` unconditionally, so every 15-minute sync pass re-inserted

@@ -200,3 +200,57 @@ def test_morning_report_retries_across_the_grace_window(monkeypatch):
     assert "08:30" in times  # still retrying an hour later
     assert "10:30" in times  # last tick of the 180-min grace window
     assert len(fires) > 1, "a single daily fire cannot pick up a late sleep sync"
+
+
+def test_evening_wrapup_retries_until_midnight(monkeypatch):
+    """The wrap-up job must re-fire after a failed send, not once at 23:00
+    (a single fire lost three nights of wrap-ups during a Signal outage)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    calls: list[dict] = []
+
+    class FakeScheduler:
+        def __init__(self, timezone=None):
+            self.timezone = timezone
+
+        def add_job(self, fn, trigger=None, id=None, **kw):  # noqa: ARG002
+            calls.append({"id": id, "trigger": trigger, **kw})
+
+        def start(self):
+            pass
+
+    class FakeSettings:
+        TIMEZONE = "Europe/Amsterdam"
+        SYNC_INTERVAL_MINUTES = 15
+        SYNC_DAYS_BACK = 3
+        SIGNAL_ENABLED = True
+        SIGNAL_REPORT_TIME = "07:30"
+        SIGNAL_REPORT_GRACE_MINUTES = 180
+        SIGNAL_REPORT_RETRY_MINUTES = 15
+        SIGNAL_COMMAND_POLL_MINUTES = 5
+        SIGNAL_JOURNAL_TIME = "22:05"
+        SIGNAL_DIGEST_TIME = "20:00"
+        SIGNAL_DIGEST_DAY = "sun"
+
+    monkeypatch.setattr(scheduler, "BlockingScheduler", FakeScheduler)
+    monkeypatch.setattr(scheduler, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(scheduler, "run_sync_pass", lambda: None)
+
+    scheduler.schedule()
+
+    trigger = next(c for c in calls if c["id"] == "signal-journal-reminder")["trigger"]
+    tz = ZoneInfo("Europe/Amsterdam")
+    cursor = datetime(2026, 9, 10, 21, 0, tzinfo=tz)
+    fires = []
+    for _ in range(24):
+        nxt = trigger.get_next_fire_time(None, cursor)
+        if nxt is None or nxt.date() > cursor.date():
+            break
+        fires.append(nxt.strftime("%H:%M"))
+        cursor = nxt + timedelta(seconds=1)
+
+    assert fires[0] == "22:05"  # first tick is exactly the configured time
+    assert "22:20" in fires and "23:50" in fires  # keeps retrying
+    assert all(f >= "22:05" for f in fires)  # never before the wrap-up time
+    assert len(fires) == 8  # 22:05..23:50 every 15 min, stops at midnight

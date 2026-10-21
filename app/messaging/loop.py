@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from ..db import session_scope
-from ..db.models import MorningReport
+from ..db.models import EveningReport, MorningReport
 from ..settings import get_settings
 from ..web.query import sleep_status
 from .briefing import build_evening_wrapup, build_morning_report, route_command
@@ -110,6 +110,10 @@ def run_morning_report() -> str:
         text, commentary = build_morning_report(
             session, day, sleep_status=status, prev_strain=True
         )
+        # Surface a wrap-up that never went out instead of losing it silently
+        # (Signal down all evening). The note travels with the briefing.
+        if missed_evening_wrapup(session, day - timedelta(days=1)):
+            text = f"{text}\n\n{MISSED_WRAPUP_NOTE}"
         _persist_morning_report(session, text, commentary, sent_at=None)
     try:
         messenger.send_message(recipient, text)
@@ -168,34 +172,101 @@ def _mark_sent(session, day: date) -> None:
         row.sent_at = datetime.now(UTC)
 
 
-def run_journal_reminder() -> None:
-    """Send the evening wrap-up (scheduler job at SIGNAL_JOURNAL_TIME).
+def run_journal_reminder() -> str:
+    """Send the evening wrap-up, retrying until it is delivered or the day ends.
 
     Day overview + LLM reflection on the day + the journal prompt, in one
     message. The overview and reflection are individually gated
     (SIGNAL_EVENING_SUMMARY / LLM_EVENING_REFLECTION) and degrade to the
     plain journal prompt when off or unavailable.
+
+    The scheduler fires this every SIGNAL_REPORT_RETRY_MINUTES from
+    SIGNAL_JOURNAL_TIME until midnight. The message is built and persisted to
+    evening_reports on the first tick and re-used on retries (no second LLM
+    call, identical text); sent_at is set only once Signal confirms delivery,
+    so later ticks no-op. Retries stop at midnight on purpose: the journal
+    prompt's /log replies log against "today", so a wrap-up delivered after
+    midnight would file answers under the wrong day. A wrap-up that never
+    went out stays sent_at=NULL and is flagged in the next morning briefing.
+
+    Returns "sent", "pending" (before the wrap-up time), "failed" (send
+    failed — the next tick retries) or "skipped" (Signal disabled / no
+    recipient).
     """
     settings = get_settings()
     messenger = get_messenger()
     if messenger is None:
         logger.info("Evening wrap-up skipped (Signal disabled)")
-        return
+        return "skipped"
     recipient = settings.SIGNAL_RECIPIENT
     if not recipient:
         logger.warning("SIGNAL_RECIPIENT unset — evening wrap-up skipped")
-        return
+        return "skipped"
+
+    now = datetime.now(ZoneInfo(_tz(settings)))
+    day = now.date()
+    hour, minute = _parse_report_time(getattr(settings, "SIGNAL_JOURNAL_TIME", "23:00"))
+    if now < datetime.combine(day, time(hour, minute), tzinfo=now.tzinfo):
+        return "pending"
+
     with session_scope() as session:
-        text, reflection = build_evening_wrapup(session)
+        row = _evening_row(session, day)
+        if row is not None and row.sent_at is not None:
+            logger.debug("Evening wrap-up already sent for %s", day)
+            return "sent"
+        if row is None:
+            text, reflection = build_evening_wrapup(session, day)
+            row = EveningReport(
+                user_id=1, report_date=day, message=text, reflection=reflection, attempts=0
+            )
+            session.add(row)
+        row.attempts = (row.attempts or 0) + 1
+        attempt = row.attempts
+        text, reflection = row.message, row.reflection
     try:
         messenger.send_message(recipient, text)
-        logger.info(
-            "Evening wrap-up sent to %s (reflection: %s)",
-            recipient,
-            "yes" if reflection else "no",
-        )
     except Exception:  # noqa: BLE001
-        logger.exception("Evening wrap-up send failed")
+        logger.exception(
+            "Evening wrap-up send failed for %s (attempt %d) — will retry until midnight",
+            day,
+            attempt,
+        )
+        return "failed"
+    with session_scope() as session:
+        row = _evening_row(session, day)
+        if row is not None:
+            row.sent_at = datetime.now(UTC)
+    logger.info(
+        "Evening wrap-up sent to %s (attempt %d, reflection: %s)",
+        recipient,
+        attempt,
+        "yes" if reflection else "no",
+    )
+    return "sent"
+
+
+def _tz(settings) -> str:
+    return getattr(settings, "TIMEZONE", None) or "Europe/Amsterdam"
+
+
+def _evening_row(session, day: date) -> EveningReport | None:
+    return session.execute(
+        select(EveningReport).where(
+            EveningReport.user_id == 1, EveningReport.report_date == day
+        )
+    ).scalar_one_or_none()
+
+
+def missed_evening_wrapup(session, day: date) -> bool:
+    """True when the wrap-up for `day` was attempted but never delivered."""
+    row = _evening_row(session, day)
+    return row is not None and row.sent_at is None
+
+
+MISSED_WRAPUP_NOTE = (
+    "⚠️ De dagafsluiting van gisteravond kon niet worden verstuurd "
+    "(Signal onbereikbaar)."
+)
 
 
 def run_weekly_digest() -> None:

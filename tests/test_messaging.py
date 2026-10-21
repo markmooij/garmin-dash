@@ -329,6 +329,7 @@ def test_run_journal_reminder_sends_prompt(seeded: Session, monkeypatch):
     monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: m)
     monkeypatch.setattr("app.messaging.loop.get_settings", lambda: _Settings())
     monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 0, tzinfo=ZoneInfo("Europe/Amsterdam")))
     run_journal_reminder()
     assert len(m.sent) == 1
     recipient, text = m.sent[0]
@@ -346,7 +347,7 @@ def test_run_journal_reminder_asks_at_most_three_factors(seeded: Session, monkey
     monkeypatch.setattr("app.messaging.loop.session_scope", _scope(seeded))
     # Freeze to a day whose date doesn't contain "11", so the "no nag line"
     # assertion below isn't tripped by the header date (e.g. "11 sep").
-    _freeze(monkeypatch, datetime(2026, 8, 9, 20, 30, tzinfo=ZoneInfo("Europe/Amsterdam")))
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 0, tzinfo=ZoneInfo("Europe/Amsterdam")))
     run_journal_reminder()
     _recipient, text = m.sent[0]
     asked = [f.key for f in FACTORS if f"{f.key} —" in text]
@@ -459,6 +460,142 @@ def test_run_journal_reminder_sends_the_wrapup(seeded: Session, monkeypatch):
     _recipient, text = m.sent[0]
     assert "Dagoverzicht" in text
     assert "Antwoord: /log" in text
+
+
+# ── evening wrap-up retry (persist-before-send, sent_at gating) ──────
+
+class FlakyMessenger(FakeMessenger):
+    """Fails the first `failures` sends, then delivers."""
+
+    def __init__(self, failures: int) -> None:
+        super().__init__()
+        self.failures = failures
+        self.calls = 0
+
+    def send_message(self, recipient: str, text: str) -> str | None:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise RuntimeError("Error while checking account: Closed unexpectedly")
+        return super().send_message(recipient, text)
+
+
+class _WrapupSettings(_EveningSettings):
+    SIGNAL_RECIPIENT = "+31600000000"
+    SIGNAL_JOURNAL_TIME = "23:00"
+
+
+def _wire_wrapup(monkeypatch, session: Session, messenger, settings=_WrapupSettings):
+    monkeypatch.setattr("app.messaging.loop.get_messenger", lambda: messenger)
+    monkeypatch.setattr("app.messaging.loop.get_settings", lambda: settings())
+    monkeypatch.setattr("app.messaging.loop.session_scope", _scope(session))
+    monkeypatch.setattr("app.messaging.briefing.get_settings", lambda: settings())
+
+
+def _evening_row(session: Session, day: date):
+    from app.db.models import EveningReport
+
+    return session.query(EveningReport).filter_by(report_date=day).one_or_none()
+
+
+def test_wrapup_failed_send_is_persisted_and_retried(seeded: Session, monkeypatch):
+    """Regression: three nights of wrap-ups were lost because a failed send
+    was logged once and dropped. The message must be kept and re-sent."""
+    m = FlakyMessenger(failures=2)
+    _wire_wrapup(monkeypatch, seeded, m)
+    tz = ZoneInfo("Europe/Amsterdam")
+
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 0, tzinfo=tz))
+    assert run_journal_reminder() == "failed"
+    row = _evening_row(seeded, DAY)
+    assert row is not None and row.sent_at is None  # persisted, not delivered
+    assert row.attempts == 1
+
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 15, tzinfo=tz))
+    assert run_journal_reminder() == "failed"
+
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 30, tzinfo=tz))
+    assert run_journal_reminder() == "sent"
+    assert len(m.sent) == 1
+    row = _evening_row(seeded, DAY)
+    assert row.sent_at is not None
+    assert row.attempts == 3
+
+
+def test_wrapup_is_sent_only_once(seeded: Session, monkeypatch):
+    """Later ticks after a successful send must not re-send (no duplicates)."""
+    m = FakeMessenger()
+    _wire_wrapup(monkeypatch, seeded, m)
+    tz = ZoneInfo("Europe/Amsterdam")
+    for minute in (0, 15, 30, 45):
+        _freeze(monkeypatch, datetime(2026, 8, 9, 23, minute, tzinfo=tz))
+        run_journal_reminder()
+    assert len(m.sent) == 1
+
+
+def test_wrapup_retry_reuses_the_persisted_text(seeded: Session, monkeypatch):
+    """A retry re-sends the stored message instead of rebuilding it, so the
+    LLM reflection is generated once and the text doesn't drift between tries."""
+    calls = {"n": 0}
+
+    def _reflection(session, day):  # noqa: ARG001
+        calls["n"] += 1
+        return f"Reflectie {calls['n']}"
+
+    class _S(_WrapupSettings):
+        LLM_ENABLED = True
+        LLM_EVENING_REFLECTION = True
+
+    m = FlakyMessenger(failures=1)
+    _wire_wrapup(monkeypatch, seeded, m, settings=_S)
+    monkeypatch.setattr("app.coach.client.evening_reflection", _reflection)
+    tz = ZoneInfo("Europe/Amsterdam")
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 0, tzinfo=tz))
+    run_journal_reminder()
+    _freeze(monkeypatch, datetime(2026, 8, 9, 23, 15, tzinfo=tz))
+    run_journal_reminder()
+    assert calls["n"] == 1  # one LLM call across both attempts
+    assert "Reflectie 1" in m.sent[0][1]
+
+
+def test_wrapup_noop_before_the_wrapup_time(seeded: Session, monkeypatch):
+    m = FakeMessenger()
+    _wire_wrapup(monkeypatch, seeded, m)
+    _freeze(monkeypatch, datetime(2026, 8, 9, 22, 45, tzinfo=ZoneInfo("Europe/Amsterdam")))
+    assert run_journal_reminder() == "pending"
+    assert m.sent == []
+    assert _evening_row(seeded, DAY) is None
+
+
+def test_morning_report_flags_a_missed_wrapup(seeded: Session, monkeypatch):
+    """A wrap-up that never went out is surfaced in the next briefing."""
+    from app.db.models import EveningReport
+    from app.messaging.loop import MISSED_WRAPUP_NOTE
+
+    seeded.add(EveningReport(
+        user_id=1, report_date=date(2026, 8, 8), message="x", attempts=4, sent_at=None
+    ))
+    seeded.commit()
+    m = FakeMessenger()
+    _wire_report(monkeypatch, seeded, m)
+    _freeze(monkeypatch, datetime(2026, 8, 9, 7, 35, tzinfo=ZoneInfo("Europe/Amsterdam")))
+    run_morning_report()
+    assert MISSED_WRAPUP_NOTE in m.sent[0][1]
+
+
+def test_morning_report_silent_when_wrapup_was_delivered(seeded: Session, monkeypatch):
+    from app.db.models import EveningReport
+    from app.messaging.loop import MISSED_WRAPUP_NOTE
+
+    seeded.add(EveningReport(
+        user_id=1, report_date=date(2026, 8, 8), message="x", attempts=1,
+        sent_at=datetime(2026, 8, 8, 21, 0),
+    ))
+    seeded.commit()
+    m = FakeMessenger()
+    _wire_report(monkeypatch, seeded, m)
+    _freeze(monkeypatch, datetime(2026, 8, 9, 7, 35, tzinfo=ZoneInfo("Europe/Amsterdam")))
+    run_morning_report()
+    assert MISSED_WRAPUP_NOTE not in m.sent[0][1]
 
 
 def test_run_weekly_digest_skips_when_ungated(seeded: Session, monkeypatch):

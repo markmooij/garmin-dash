@@ -105,7 +105,12 @@ def run_command_poll_job() -> None:
 
 
 def run_journal_reminder_job() -> None:
-    """Send the evening journal prompt (no-op when Signal is disabled)."""
+    """Send the evening wrap-up (no-op when Signal is disabled).
+
+    Scheduled every SIGNAL_REPORT_RETRY_MINUTES from SIGNAL_JOURNAL_TIME to
+    midnight; run_journal_reminder() itself no-ops before the wrap-up time
+    and once it has been delivered, so this is safe to fire repeatedly.
+    """
     try:
         from ..messaging.loop import run_journal_reminder
 
@@ -208,9 +213,17 @@ def schedule() -> None:
             max_instances=1,
         )
         journal_hour, journal_minute = _parse_report_time(settings.SIGNAL_JOURNAL_TIME)
+        # Fire at the wrap-up time and then every `retry_min` until midnight so
+        # a failed Signal send is retried instead of silently lost. The job
+        # no-ops before the wrap-up time and once it has been delivered (see
+        # run_journal_reminder). The minute pattern is anchored on the
+        # configured minute so the first tick is exactly SIGNAL_JOURNAL_TIME.
         scheduler.add_job(
             run_journal_reminder_job,
-            trigger=CronTrigger(hour=journal_hour, minute=journal_minute),
+            trigger=CronTrigger(
+                hour=f"{journal_hour}-23",
+                minute=f"{journal_minute % retry_min}-59/{retry_min}",
+            ),
             id="signal-journal-reminder",
             replace_existing=True,
             coalesce=True,

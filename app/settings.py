@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     # Evening wrap-up: day overview + LLM reflection + journal prompt. Late
     # enough that the day is essentially complete (training, steps and stress
     # are all in) but before midnight so it still logs against today.
+    # Retried every SIGNAL_REPORT_RETRY_MINUTES until delivered (or midnight).
     SIGNAL_JOURNAL_TIME: str = "23:00"  # evening wrap-up (overview + reminder)
     # Prepend a numeric day overview (recovery/strain/sleep/watch/activities)
     # to the evening message. Off = journal prompt only (pre-0.2 behaviour).

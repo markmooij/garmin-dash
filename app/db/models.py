@@ -418,3 +418,29 @@ class MorningReport(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+
+class EveningReport(Base):
+    """The daily Signal evening wrap-up (day overview + reflection + journal
+    prompt), persisted before the send so a failed delivery can be retried
+    with the same text — without re-running the LLM reflection — and so a
+    missed wrap-up is visible (sent_at=NULL) instead of silently lost.
+    One row per report_date.
+    """
+
+    __tablename__ = "evening_reports"
+    __table_args__ = (UniqueConstraint("user_id", "report_date", name="uq_evening_user_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1)
+    report_date: Mapped[date] = mapped_column(Date, index=True)
+    message: Mapped[str] = mapped_column(Text)
+    reflection: Mapped[str | None] = mapped_column(Text)
+    # NULL until Signal confirms delivery; the scheduler retries until set.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
